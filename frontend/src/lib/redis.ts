@@ -14,17 +14,29 @@ export const CACHE_KEYS = {
   TRENDING_BRANDS: 'ui:trending-brands'
 } as const;
 
+// Modified to return null when Redis URL is not available
 const getRedisClient = () => {
   if (!process.env.UI_REDIS_URL) {
-    throw new Error('UI_REDIS_URL is not defined');
+    console.warn('UI_REDIS_URL is not defined, Redis caching will be disabled');
+    return null;
   }
-  return new Redis(process.env.UI_REDIS_URL);
+  
+  try {
+    return new Redis(process.env.UI_REDIS_URL);
+  } catch (error) {
+    console.error('Failed to initialize Redis client:', error);
+    return null;
+  }
 };
 
 export const redis = getRedisClient();
 
-// Utility functions for caching
+// Utility functions for caching - modified to handle null redis client
 export async function getCachedData<T>(key: string): Promise<T | null> {
+  if (!redis) {
+    return null;
+  }
+  
   try {
     const cachedData = await redis.get(key);
     return cachedData ? JSON.parse(cachedData) : null;
@@ -35,6 +47,10 @@ export async function getCachedData<T>(key: string): Promise<T | null> {
 }
 
 export async function setCachedData(key: string, data: any, duration: number): Promise<void> {
+  if (!redis) {
+    return;
+  }
+  
   try {
     await redis.setex(key, duration, JSON.stringify(data));
   } catch (error) {
