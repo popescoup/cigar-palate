@@ -1,6 +1,6 @@
 // src/app/api/cigars/top-rated/route.ts
 import { NextResponse } from 'next/server';
-import { getCachedData, setCachedData, CACHE_KEYS, getCacheDuration, CACHE_DURATIONS } from '@/lib/redis';
+import { getCachedData, setCachedData, CACHE_KEYS, getCacheDuration } from '@/lib/redis';
 
 export async function GET() {
   const startTime = Date.now();
@@ -33,6 +33,48 @@ export async function GET() {
     console.log('❌ Cache MISS - fetching top-rated cigars from backend');
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
     console.log(`🌐 Fetching from: ${backendUrl}/api/cigars/top-rated`);
+    
+    // Add placeholder data handler
+    if (backendUrl === 'https://placeholder-api.com') {
+      console.log('Using placeholder data during build');
+      const placeholderData = {
+        cigars: [
+          { 
+            id: 1, 
+            name: 'Placeholder Cigar 1', 
+            slug: 'placeholder-cigar-1',
+            rating: 4.9,
+            brand: { name: 'Placeholder Brand', slug: 'placeholder-brand' },
+            image: '/images/placeholder.jpg'
+          },
+          { 
+            id: 2, 
+            name: 'Placeholder Cigar 2', 
+            slug: 'placeholder-cigar-2',
+            rating: 4.8,
+            brand: { name: 'Placeholder Brand', slug: 'placeholder-brand' },
+            image: '/images/placeholder.jpg'
+          },
+          { 
+            id: 3, 
+            name: 'Placeholder Cigar 3', 
+            slug: 'placeholder-cigar-3',
+            rating: 4.7,
+            brand: { name: 'Placeholder Brand', slug: 'placeholder-brand' },
+            image: '/images/placeholder.jpg'
+          }
+        ]
+      };
+      
+      const responseTime = Date.now() - startTime;
+      return NextResponse.json(placeholderData, {
+        headers: {
+          'X-Cache': 'MISS',
+          'X-Placeholder': 'true',
+          'X-Response-Time': `${responseTime}ms`
+        }
+      });
+    }
     
     const response = await fetch(`${backendUrl}/api/cigars/top-rated`);
     

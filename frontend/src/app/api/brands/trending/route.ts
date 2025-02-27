@@ -34,6 +34,27 @@ export async function GET() {
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
     console.log(`🌐 Fetching from: ${backendUrl}/api/brands/trending`);
     
+    // Add this check for placeholder URL
+    if (backendUrl === 'https://placeholder-api.com') {
+      console.log('Using placeholder data during build');
+      const placeholderData = {
+        brands: [
+          { id: 1, name: 'Placeholder Brand 1', count: 120, slug: 'placeholder-1' },
+          { id: 2, name: 'Placeholder Brand 2', count: 95, slug: 'placeholder-2' },
+          { id: 3, name: 'Placeholder Brand 3', count: 82, slug: 'placeholder-3' }
+        ]
+      };
+      
+      const responseTime = Date.now() - startTime;
+      return NextResponse.json(placeholderData, {
+        headers: {
+          'X-Cache': 'MISS',
+          'X-Placeholder': 'true',
+          'X-Response-Time': `${responseTime}ms`
+        }
+      });
+    }
+    
     const response = await fetch(`${backendUrl}/api/brands/trending`);
     
     if (!response.ok) {

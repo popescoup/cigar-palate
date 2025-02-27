@@ -1,6 +1,6 @@
 // src/app/api/brands/top-rated/route.ts
 import { NextResponse } from 'next/server';
-import { getCachedData, setCachedData, CACHE_KEYS, getCacheDuration, CACHE_DURATIONS } from '@/lib/redis';
+import { getCachedData, setCachedData, CACHE_KEYS, getCacheDuration } from '@/lib/redis';
 
 export async function GET() {
   const startTime = Date.now();
@@ -33,6 +33,27 @@ export async function GET() {
     console.log('❌ Cache MISS - fetching top-rated brands from backend');
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
     console.log(`🌐 Fetching from: ${backendUrl}/api/brands/top-rated`);
+    
+    // Add placeholder data handler
+    if (backendUrl === 'https://placeholder-api.com') {
+      console.log('Using placeholder data during build');
+      const placeholderData = {
+        brands: [
+          { id: 1, name: 'Placeholder Brand 1', count: 150, slug: 'placeholder-1', rating: 4.8 },
+          { id: 2, name: 'Placeholder Brand 2', count: 120, slug: 'placeholder-2', rating: 4.7 },
+          { id: 3, name: 'Placeholder Brand 3', count: 100, slug: 'placeholder-3', rating: 4.6 }
+        ]
+      };
+      
+      const responseTime = Date.now() - startTime;
+      return NextResponse.json(placeholderData, {
+        headers: {
+          'X-Cache': 'MISS',
+          'X-Placeholder': 'true',
+          'X-Response-Time': `${responseTime}ms`
+        }
+      });
+    }
     
     const response = await fetch(`${backendUrl}/api/brands/top-rated`);
     
