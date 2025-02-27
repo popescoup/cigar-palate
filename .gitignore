@@ -44,3 +44,4 @@ yarn-error.log*
 
 # Backend specific
 /backend/tmp/
+/backend/search/meilisearch
