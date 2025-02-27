@@ -39,6 +39,53 @@ const PageWrapper = dynamic(() => import('@/components/PageWrapper'), {
 async function getData() {
   const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
   
+  // Add check for placeholder API
+  if (backendUrl === 'https://placeholder-api.com') {
+    console.log('Using placeholder data for home page during build');
+    return {
+      trendingCigars: {
+        cigars: [
+          { 
+            id: 1, 
+            name: 'Trending Placeholder Cigar 1', 
+            slug: 'trending-placeholder-1',
+            views: 350,
+            brand: { name: 'Placeholder Brand', slug: 'placeholder-brand' },
+            image: '/images/placeholder.jpg'
+          },
+          { 
+            id: 2, 
+            name: 'Trending Placeholder Cigar 2', 
+            slug: 'trending-placeholder-2',
+            views: 320,
+            brand: { name: 'Placeholder Brand', slug: 'placeholder-brand' },
+            image: '/images/placeholder.jpg'
+          }
+        ]
+      },
+      topRatedCigars: {
+        cigars: [
+          { 
+            id: 1, 
+            name: 'Top Rated Placeholder Cigar 1', 
+            slug: 'top-rated-placeholder-1',
+            rating: 4.9,
+            brand: { name: 'Placeholder Brand', slug: 'placeholder-brand' },
+            image: '/images/placeholder.jpg'
+          },
+          { 
+            id: 2, 
+            name: 'Top Rated Placeholder Cigar 2', 
+            slug: 'top-rated-placeholder-2',
+            rating: 4.8,
+            brand: { name: 'Placeholder Brand', slug: 'placeholder-brand' },
+            image: '/images/placeholder.jpg'
+          }
+        ]
+      }
+    };
+  }
+  
   const [trendingCigars, topRatedCigars] = await Promise.all([
     fetch(`${backendUrl}/api/cigars/trending?limit=4`, { next: { revalidate: 3600 } }),
     fetch(`${backendUrl}/api/cigars/top-rated?limit=4`, { next: { revalidate: 3600 } })
