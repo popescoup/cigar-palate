@@ -1,0 +1,21 @@
+# robots.txt for Cigar Enthusiast Website
+
+# Allow all crawlers
+User-agent: *
+
+# Allow crawling of all content
+Allow: /
+
+# Disallow admin and private areas
+Disallow: /admin/
+Disallow: /admin/*
+Disallow: /api/
+Disallow: /api/*
+Disallow: /auth-required/
+Disallow: /token-test/
+
+# Sitemap location
+Sitemap: https://CigarPalate.com/sitemap.xml
+
+# Crawl delay for heavy pages
+Crawl-delay: 1

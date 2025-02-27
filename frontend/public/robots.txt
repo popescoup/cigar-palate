@@ -1,0 +1,12 @@
+# *
+User-agent: *
+Disallow: /admin
+Disallow: /auth-required
+Disallow: /token-test
+Disallow: /api
+
+# Host
+Host: https://cigarpalate.com
+
+# Sitemaps
+Sitemap: https://cigarpalate.com/sitemap.xml

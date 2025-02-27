@@ -1,0 +1,15 @@
+
+/*
+	•	Defines paths for various directories used in the application, such as models, seeders, and migrations.
+	•	Points to config.cli.js as the configuration file for CLI-specific settings, ensuring proper setup for database operations.
+	•	Uses path.resolve to generate absolute paths for these directories, enhancing portability and consistency across environments.
+*/
+
+const path = require('path');
+
+module.exports = {
+  'config': path.resolve('config.cli.js'),  // Point to the new CLI-specific config file
+  'models-path': path.resolve('models'),
+  'seeders-path': path.resolve('seeders'),
+  'migrations-path': path.resolve('migrations')
+};
