@@ -4,6 +4,15 @@ import { redis } from '@/lib/redis';
 
 export async function GET(request: Request) {
   try {
+    // Check if Redis is available
+    if (!redis) {
+      return NextResponse.json({
+        status: 'error',
+        message: 'Redis is not configured in this environment',
+        connected: false
+      }, { status: 503 });
+    }
+    
     // Clear any existing data
     await redis.flushdb();
     
