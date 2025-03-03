@@ -61,6 +61,7 @@ app.use(cors({
         'http://localhost:3001',
         `http://192.168.1.243:3001`,
         'https://cigarpalate.com',
+        'https://www.cigarpalate.com',
         process.env.FRONTEND_URL 
     ],
     credentials: true,
