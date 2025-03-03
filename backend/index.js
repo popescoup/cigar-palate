@@ -28,7 +28,7 @@ const Tag = require('./models/tag');
 const ThreadTag = require('./models/threadTag');
 const Vote = require('./models/vote');
 const PendingSubmission = require('./models/pendingSubmission');
-const ThreadBookmark = require('./models/threadBookmark');
+const ThreadBookmark = require('./models/ThreadBookmark');
 const Follow = require('./models/follow');
 const Notification = require('./models/notification');
 
