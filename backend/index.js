@@ -59,7 +59,9 @@ const PORT = process.env.PORT || 3000;
 app.use(cors({
     origin: [
         'http://localhost:3001',
-        `http://192.168.1.243:3001`  // Your specific IP
+        `http://192.168.1.243:3001`,
+        'https://cigarpalate.com',
+        process.env.FRONTEND_URL 
     ],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
