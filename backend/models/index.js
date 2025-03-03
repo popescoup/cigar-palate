@@ -14,7 +14,7 @@ const Vote = require('./vote');
 const PendingSubmission = require('./pendingSubmission');
 const Bookmark = require('./bookmark');
 const Rating = require('./rating');
-const ThreadBookmark = require('./threadBookmark');
+const ThreadBookmark = require('./ThreadBookmark');
 const Follow = require('./follow');
 const Notification = require('./notification');
 
