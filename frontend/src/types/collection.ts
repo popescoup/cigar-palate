@@ -9,7 +9,9 @@ export interface Brand {
   recentRatingsCount?: number;
   recentReviewsCount?: number;
   totalRecentInteractions?: number;
-  image_path?: string;
+  image_key?: string;
+  image_url?: string;
+  image_path?: string; // Keep for backward compatibility
 }
 
 export interface ScrollItem {
@@ -18,7 +20,9 @@ export interface ScrollItem {
   title: string;
   subtitle: string;
   value: string | number;
-  image_path?: string;
+  image_key?: string;
+  image_url?: string;
+  image_path?: string; // Keep for backward compatibility
   numberOfRatings?: number;
   flavors?: string | string[];
   price_range?: string;

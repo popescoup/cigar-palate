@@ -64,8 +64,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     };
 
     // Add image metadata if thread has an image
-    if (thread.image_path) {
-      const imageUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/${thread.image_path}`;
+    if (thread.image_key) {
+      const imageUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/${thread.image_key}`;
       metadata.openGraph = {
         ...metadata.openGraph,
         images: [{

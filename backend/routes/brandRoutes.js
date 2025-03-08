@@ -14,10 +14,8 @@ const sequelize = require('../config'); // Import Sequelize instance from config
 const router = express.Router();  // Create a new Express router
 const { Sequelize, Op } = require('sequelize');
 const multer = require('multer');
-const { upload, processAndSaveImage } = require('../config/multerConfig');
-const fsPromises = require('fs').promises;
-const path = require('path');
-const uploadsDir = path.join(process.cwd(), 'uploads');
+const spacesUploadMiddleware = require('../middleware/spacesUploadMiddleware');
+const { deleteImage } = require('../utils/spaces-config');
 
 function safelyLogAssociations(model) {
     const associations = {};
@@ -78,11 +76,14 @@ function safelyLogAssociations(model) {
   };
 
   const getTopRatedBrands = async (limit = null, skip = null, page = null, itemsPerPage = null) => {
+    // Ensure limit is a number and has a maximum value
+    const effectiveLimit = limit ? Math.min(parseInt(limit), 10) : null;
+    
     const queryOptions = {
       attributes: [
         'id',
         'name',
-        'image_path',
+        'image_key',
         [Sequelize.fn('AVG', Sequelize.col('cigars.averageRating')), 'avgRating'],
         [Sequelize.fn('COUNT', Sequelize.col('cigars.id')), 'cigarCount']
       ],
@@ -92,17 +93,20 @@ function safelyLogAssociations(model) {
         attributes: [],
         required: false
       }],
-      group: ['Brand.id', 'Brand.name'],
+      group: ['Brand.id', 'Brand.name', 'Brand.image_key'],
       having: Sequelize.literal('COUNT("cigars"."id") > 0'),
-      order: [[Sequelize.literal('AVG("cigars"."averageRating")'), 'DESC']],
+      order: [
+        [Sequelize.literal('AVG("cigars"."averageRating")'), 'DESC'],
+        [Sequelize.literal('COUNT("cigars"."id")'), 'DESC']  // Secondary sort by cigar count
+      ],
       subQuery: false
     };
   
     // Progressive loading (homepage)
-    if (limit !== null) {
-      queryOptions.limit = limit;
+    if (effectiveLimit !== null) {
+      queryOptions.limit = effectiveLimit;
       if (skip !== null) {
-        queryOptions.offset = skip;
+        queryOptions.offset = parseInt(skip);
       }
     }
     // Pagination (discover page)
@@ -137,13 +141,16 @@ function safelyLogAssociations(model) {
   };
 
   const getTrendingBrands = async (limit = null, skip = null, page = null, itemsPerPage = null) => {
+    // Ensure limit is a number and has a maximum value
+    const effectiveLimit = limit ? Math.min(parseInt(limit), 10) : null;
+    
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   
     const queryOptions = {
       attributes: [
         'id',
         'name',
-        'image_path',
+        'image_key',
         [Sequelize.fn('AVG', Sequelize.col('cigars.averageRating')), 'avgRating'],
         [Sequelize.fn('COUNT', Sequelize.col('cigars.id')), 'cigarCount'],
         [
@@ -198,10 +205,10 @@ function safelyLogAssociations(model) {
     };
   
     // Progressive loading (homepage)
-    if (limit !== null) {
-      queryOptions.limit = limit;
+    if (effectiveLimit !== null) {
+      queryOptions.limit = effectiveLimit;
       if (skip !== null) {
-        queryOptions.offset = skip;
+        queryOptions.offset = parseInt(skip);
       }
     }
     // Pagination (discover page)
@@ -249,36 +256,6 @@ function safelyLogAssociations(model) {
     });
   };
 
-  const uploadMiddleware = (req, res, next) => {
-    upload.single('image')(req, res, async function(err) {
-        if (err) {
-            console.error('Multer upload error:', err);
-            return res.status(400).json({
-                error: 'File upload failed',
-                details: err.message
-            });
-        }
-        
-        try {
-            if (req.file) {
-                const imageResult = await processAndSaveImage(
-                    req.file,
-                    uploadsDir,
-                    `image-${Date.now()}-${Math.round(Math.random() * 1E9)}${path.extname(req.file.originalname)}`
-                );
-                req.processedImage = imageResult;
-            }
-            next();
-        } catch (error) {
-            console.error('Image processing error:', error);
-            return res.status(400).json({
-                error: 'Image processing failed',
-                details: error.message
-            });
-        }
-    });
-};
-
   router.get('/brands/all', async (req, res) => {
     try {
       console.log('Fetching all brands...');
@@ -314,7 +291,7 @@ router.get('/brands', async (req, res) => {
       attributes: [
         'id',
         'name',
-        'image_path',
+        'image_key',
         [Sequelize.fn('COUNT', Sequelize.col('cigars.id')), 'cigarCount'],
         [Sequelize.fn('AVG', Sequelize.col('cigars.averageRating')), 'averageRating']
       ],
@@ -324,7 +301,7 @@ router.get('/brands', async (req, res) => {
         attributes: [],
         required: false
       }],
-      group: ['Brand.id', 'Brand.name', 'Brand.image_path'],
+      group: ['Brand.id', 'Brand.name', 'Brand.image_key'],
       limit: limit,
       offset: offset,
       order: [['name', 'ASC']],
@@ -478,7 +455,7 @@ router.get('/brands/:id/cigars', async (req, res) => {
       attributes: [
         'id',
         'name',
-        'image_path',
+        'image_key',
         'averageRating',
         'numberOfRatings',
         'totalRatings',
@@ -564,7 +541,7 @@ router.get('/brands/:id/other-cigars', async (req, res) => {
       attributes: [
         'id',
         'name',
-        'image_path',
+        'image_key',
         'averageRating',
         'numberOfRatings',
         'totalRatings',
@@ -630,15 +607,15 @@ router.get('/brands/:id/other-cigars', async (req, res) => {
 });
 
 // Route to add a new brand (with validation and image handling)
-router.post('/brands', uploadMiddleware, async (req, res) => {
+router.post('/brands', spacesUploadMiddleware, async (req, res) => {
   const transaction = await sequelize.transaction();
   try {
       const { name, description } = req.body;
 
       // Validate that the brand name is provided and not empty
       if (!name || name.trim().length === 0) {
-          if (req.processedImage) {
-              await fsPromises.unlink(path.join(uploadsDir, req.processedImage.path));
+          if (req.processedImages?.brand) {
+              await deleteImage(req.processedImages.brand.key);
           }
           await transaction.rollback();
           return res.status(400).json({ error: 'Brand name is required' });
@@ -646,9 +623,9 @@ router.post('/brands', uploadMiddleware, async (req, res) => {
 
       // Prepare brand data
       const brandData = {
-          name,
-          description: description || null,
-          image_path: req.processedImage?.path || null
+        name,
+        description: description || null,
+        image_key: req.processedImages?.brand?.key || null
       };
 
       // Create a new brand in the database
@@ -659,13 +636,13 @@ router.post('/brands', uploadMiddleware, async (req, res) => {
   } catch (err) {
       await transaction.rollback();
       // Clean up the processed image if anything fails
-      if (req.processedImage?.path) {
-          try {
-              await fsPromises.unlink(path.join(uploadsDir, req.processedImage.path));
-              console.log('Cleaned up processed image after failed brand creation');
-          } catch (deleteErr) {
-              console.error('Error deleting processed image:', deleteErr);
-          }
+      if (req.processedImages?.brand) {
+        try {
+            await deleteImage(req.processedImages.brand.key);
+            console.log('Cleaned up processed image after failed brand creation');
+        } catch (deleteErr) {
+            console.error('Error deleting processed image:', deleteErr);
+        }
       }
       console.error('Error creating brand:', err);
       res.status(400).json({ error: 'Failed to create brand', details: err.message });

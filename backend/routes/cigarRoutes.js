@@ -7,54 +7,25 @@ Includes error handling, pagination for cigar retrieval, and file type/size vali
 */
 
 const express = require('express');
-const Cigar = require('../models/cigar');  // Import the Cigar model
-const Brand = require('../models/brand');  // Import the Brand model
+const Cigar = require('../models/cigar');
+const Brand = require('../models/brand');
 const Review = require('../models/review');
 const FlavorRanking = require('../models/flavorRanking');
-const multer = require('multer');  // Import Multer for handling file uploads
-const path = require('path');  // Path for handling file paths
+const multer = require('multer');
+const path = require('path');
 const { Sequelize, Op } = require('sequelize');
 const sequelize = require('../config'); 
 const Rating = require('../models/rating');
 const router = express.Router();
 const { auth } = require('../middleware/auth');
 const { calculateSimilarityScore } = require('../services/similarityService');
-const { upload, processAndSaveImage } = require('../config/multerConfig');
-const fsPromises = require('fs').promises;
-const uploadsDir = path.join(process.cwd(), 'uploads');
-
-
-const uploadMiddleware = (req, res, next) => {
-  upload.single('image')(req, res, async function(err) {
-      if (err) {
-          console.error('Multer upload error:', err);
-          return res.status(400).json({
-              error: 'File upload failed',
-              details: err.message
-          });
-      }
-      
-      try {
-          if (req.file) {
-              const imageResult = await processAndSaveImage(
-                  req.file,
-                  uploadsDir,
-                  `image-${Date.now()}-${Math.round(Math.random() * 1E9)}${path.extname(req.file.originalname)}`
-              );
-              req.processedImage = imageResult;
-          }
-          next();
-      } catch (error) {
-          console.error('Image processing error:', error);
-          return res.status(400).json({
-              error: 'Image processing failed',
-              details: error.message
-          });
-      }
-  });
-};
+const spacesUploadMiddleware = require('../middleware/spacesUploadMiddleware');
+const { deleteImage } = require('../utils/spaces-config');
 
 const getTopRatedCigars = async (limit = null, skip = null, page = null, itemsPerPage = null) => {
+  // Ensure limit is a number and has a maximum value
+  const effectiveLimit = limit ? Math.min(parseInt(limit), 10) : null;
+  
   const queryOptions = {
     attributes: [
       'id',
@@ -62,7 +33,7 @@ const getTopRatedCigars = async (limit = null, skip = null, page = null, itemsPe
       'averageRating',
       'numberOfRatings',
       'totalRatings',
-      'image_path',
+      'image_key',
       'flavors',
       'price_range',
       'dimensions',
@@ -75,7 +46,11 @@ const getTopRatedCigars = async (limit = null, skip = null, page = null, itemsPe
         attributes: ['name'] 
       }
     ],
-    order: [['averageRating', 'DESC']],
+    order: [
+      ['averageRating', 'DESC'],
+      ['numberOfRatings', 'DESC'],  // Secondary sort by number of ratings
+      ['name', 'ASC']               // Tertiary sort by name for consistent ordering
+    ],
     where: {
       numberOfRatings: {
         [Op.gt]: 0  // Only include cigars that have ratings
@@ -84,10 +59,10 @@ const getTopRatedCigars = async (limit = null, skip = null, page = null, itemsPe
   };
 
   // Progressive loading (homepage)
-  if (limit !== null) {
-    queryOptions.limit = limit;
+  if (effectiveLimit !== null) {
+    queryOptions.limit = effectiveLimit;
     if (skip !== null) {
-      queryOptions.offset = skip;
+      queryOptions.offset = parseInt(skip);
     }
   }
   // Pagination (discover page)
@@ -115,6 +90,9 @@ const getTopRatedCigars = async (limit = null, skip = null, page = null, itemsPe
 };
 
 const getTrendingCigars = async (limit = null, skip = null, page = null, itemsPerPage = null) => {
+  // Ensure limit is a number and has a maximum value
+  const effectiveLimit = limit ? Math.min(parseInt(limit), 10) : null;
+  
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
   const queryOptions = {
@@ -123,7 +101,7 @@ const getTrendingCigars = async (limit = null, skip = null, page = null, itemsPe
       'name',
       'averageRating',
       'numberOfRatings',
-      'image_path',
+      'image_key',
       'flavors',
       'price_range',
       'dimensions',
@@ -166,15 +144,17 @@ const getTrendingCigars = async (limit = null, skip = null, page = null, itemsPe
            AND "Reviews"."created_at" >= '${sevenDaysAgo.toISOString()}')
         )`),
         'DESC'
-      ]
+      ],
+      ['averageRating', 'DESC'],  // Secondary sort by average rating
+      ['name', 'ASC']             // Tertiary sort by name
     ]
   };
 
   // Progressive loading (homepage)
-  if (limit !== null) {
-    queryOptions.limit = limit;
+  if (effectiveLimit !== null) {
+    queryOptions.limit = effectiveLimit;
     if (skip !== null) {
-      queryOptions.offset = skip;
+      queryOptions.offset = parseInt(skip);
     }
   }
   // Pagination (discover page)
@@ -250,7 +230,7 @@ const getAlphabeticalCigars = async (cursor = null, limit = 100) => {
 };
 
 // Route to create a new cigar (with image upload and new brand logic)
-router.post('/cigars', uploadMiddleware, async (req, res) => {
+router.post('/cigars', spacesUploadMiddleware, async (req, res) => {
   const transaction = await sequelize.transaction();
   try {
       const {
@@ -263,24 +243,24 @@ router.post('/cigars', uploadMiddleware, async (req, res) => {
 
       // Validate required fields
       if (!name?.trim()) {
-          if (req.processedImage) {
-              await fsPromises.unlink(path.join(uploadsDir, req.processedImage.path));
+          if (req.processedImages?.cigar) {
+              await deleteImage(req.processedImages.cigar.key);
           }
           await transaction.rollback();
           return res.status(400).json({ error: 'Cigar name is required' });
       }
 
       if (!flavors?.trim()) {
-          if (req.processedImage) {
-              await fsPromises.unlink(path.join(uploadsDir, req.processedImage.path));
+          if (req.processedImages?.cigar) {
+              await deleteImage(req.processedImages.cigar.key);
           }
           await transaction.rollback();
           return res.status(400).json({ error: 'Flavors are required' });
       }
 
       if (!description?.trim()) {
-          if (req.processedImage) {
-              await fsPromises.unlink(path.join(uploadsDir, req.processedImage.path));
+          if (req.processedImages?.cigar) {
+              await deleteImage(req.processedImages.cigar.key);
           }
           await transaction.rollback();
           return res.status(400).json({ error: 'Description is required' });
@@ -295,16 +275,16 @@ router.post('/cigars', uploadMiddleware, async (req, res) => {
               finalBrandId = newBrand.id;
           } catch (brandError) {
               await transaction.rollback();
-              if (req.processedImage) {
-                  await fsPromises.unlink(path.join(uploadsDir, req.processedImage.path));
+              if (req.processedImages?.cigar) {
+                  await deleteImage(req.processedImages.cigar.key);
               }
               return res.status(400).json({ error: 'Failed to create new brand', details: brandError.message });
           }
       }
 
-      // Image handling: Get the path if an image file is uploaded
-      const imagePath = req.processedImage?.path;
-      if (!imagePath) {
+      // Image handling: Get the key if an image file is uploaded
+      const imageKey = req.processedImages?.cigar?.key;
+      if (!imageKey) {
           await transaction.rollback();
           return res.status(400).json({ error: 'Cigar image is required' });
       }
@@ -312,7 +292,7 @@ router.post('/cigars', uploadMiddleware, async (req, res) => {
       // Prepare cigar data with required fields
       const cigarData = {
         name,
-        image_path: imagePath,
+        image_key: imageKey,
         brand_id: finalBrandId,
         flavors,
         description
@@ -337,8 +317,8 @@ router.post('/cigars', uploadMiddleware, async (req, res) => {
         const validPriceRanges = ['<$10', '$10.01 - $25', '$25.01 - $50', '$50.01 - $75', '$75.01 - $100', '$100.01<'];
         if (!validPriceRanges.includes(req.body.price_range)) {
             await transaction.rollback();
-            if (req.processedImage) {
-                await fsPromises.unlink(path.join(uploadsDir, req.processedImage.path));
+            if (req.processedImages?.cigar) {
+                await deleteImage(req.processedImages.cigar.key);
             }
             return res.status(400).json({ error: 'Invalid price range' });
         }
@@ -355,9 +335,9 @@ router.post('/cigars', uploadMiddleware, async (req, res) => {
 } catch (err) {
     await transaction.rollback();
     // Clean up the processed image if anything fails
-    if (req.processedImage?.path) {
+    if (req.processedImages?.cigar) {
         try {
-            await fsPromises.unlink(path.join(uploadsDir, req.processedImage.path));
+            await deleteImage(req.processedImages.cigar.key);
             console.log('Cleaned up processed image after failed cigar creation');
         } catch (deleteErr) {
             console.error('Error deleting processed image:', deleteErr);
@@ -457,18 +437,18 @@ router.get('/cigars/top-rated/all', async (req, res) => {
   }
 });
 
-  // Route for home page (top 10)
-  router.get('/cigars/trending', async (req, res) => {
-    try {
-      const limit = req.query.limit ? parseInt(req.query.limit) : null;
-      const skip = req.query.skip ? parseInt(req.query.skip) : 0;
-      const trendingCigars = await getTrendingCigars(limit, skip);
-      res.json(trendingCigars);
-    } catch (error) {
-      console.error('Error fetching trending cigars:', error);
-      res.status(500).json({ error: 'Failed to fetch trending cigars', details: error.message });
-    }
-  });
+// Route for home page (trending)
+router.get('/cigars/trending', async (req, res) => {
+  try {
+    const limit = req.query.limit ? parseInt(req.query.limit) : null;
+    const skip = req.query.skip ? parseInt(req.query.skip) : 0;
+    const trendingCigars = await getTrendingCigars(limit, skip);
+    res.json(trendingCigars);
+  } catch (error) {
+    console.error('Error fetching trending cigars:', error);
+    res.status(500).json({ error: 'Failed to fetch trending cigars', details: error.message });
+  }
+});
 
 // Route for full trending list
 router.get('/cigars/trending/all', async (req, res) => {
@@ -494,128 +474,126 @@ router.get('/cigars/trending/all', async (req, res) => {
 router.get('/cigars/:id', async (req, res) => {
     try {
       const cigar = await Cigar.findByPk(req.params.id, {
-        include: [{ model: Brand, as: 'brand', attributes: ['name'] }]  // Include the brand name
+        include: [{ model: Brand, as: 'brand', attributes: ['name'] }]
       });
   
       if (cigar) {
-        res.status(200).json(cigar);  // Respond with the cigar, including the brand
+        res.status(200).json(cigar);
       } else {
         res.status(404).json({ error: 'Cigar not found' });
       }
     } catch (err) {
       res.status(500).json({ error: 'Failed to retrieve cigar', details: err.message });
     }
-  });
+});
 
-// Route to update a cigar by ID (with image upload and new brand logic)
-router.put('/cigars/:id', uploadMiddleware, async (req, res) => {
-  
+// Route to update a cigar by ID
+router.put('/cigars/:id', spacesUploadMiddleware, async (req, res) => {
   // Validate required fields
   if (!req.body.name?.trim()) {
-    if (req.processedImage) {
-        await fsPromises.unlink(path.join(uploadsDir, req.processedImage.path));
+    if (req.processedImages?.cigar) {
+        await deleteImage(req.processedImages.cigar.key);
     }
     return res.status(400).json({ error: 'Cigar name is required' });
-}
-
-if (!req.body.flavors?.trim()) {
-  if (req.processedImage) {
-      await fsPromises.unlink(path.join(uploadsDir, req.processedImage.path));
   }
-  return res.status(400).json({ error: 'Flavors are required' });
-}
 
-if (!req.body.description?.trim()) {
-  if (req.processedImage) {
-      await fsPromises.unlink(path.join(uploadsDir, req.processedImage.path));
+  if (!req.body.flavors?.trim()) {
+    if (req.processedImages?.cigar) {
+        await deleteImage(req.processedImages.cigar.key);
+    }
+    return res.status(400).json({ error: 'Flavors are required' });
   }
-  return res.status(400).json({ error: 'Description is required' });
-}
-  
+
+  if (!req.body.description?.trim()) {
+    if (req.processedImages?.cigar) {
+        await deleteImage(req.processedImages.cigar.key);
+    }
+    return res.status(400).json({ error: 'Description is required' });
+  }
   
   const transaction = await sequelize.transaction();
     try {
         const cigar = await Cigar.findByPk(req.params.id, { transaction });
         if (!cigar) {
-            if (req.processedImage) {
-                await fsPromises.unlink(path.join(uploadsDir, req.processedImage.path));
+            if (req.processedImages?.cigar) {
+                await deleteImage(req.processedImages.cigar.key);
             }
             await transaction.rollback();
             return res.status(404).json({ error: 'Cigar not found' });
         }
       
-      // Store old image path for cleanup
-      const oldImagePath = cigar.image_path;
+      // Store old image key for cleanup
+      const oldImageKey = cigar.image_key;
 
       let finalBrandId = req.body.brand_id;   
 
       // Handle new brand creation if provided
-if (req.body.new_brand) {
-  try {
-      const newBrand = await Brand.create({ name: req.body.new_brand }, { transaction });
-      finalBrandId = newBrand.id;
-  } catch (brandError) {
-      await transaction.rollback();
-      if (req.processedImage) {
-          await fsPromises.unlink(path.join(uploadsDir, req.processedImage.path));
+      if (req.body.new_brand) {
+        try {
+            const newBrand = await Brand.create({ name: req.body.new_brand }, { transaction });
+            finalBrandId = newBrand.id;
+        } catch (brandError) {
+            await transaction.rollback();
+            if (req.processedImages?.cigar) {
+                await deleteImage(req.processedImages.cigar.key);
+            }
+            return res.status(400).json({ error: 'Failed to create new brand', details: brandError.message });
+        }
       }
-      return res.status(400).json({ error: 'Failed to create new brand', details: brandError.message });
-  }
-}
 
       // Update the image if a new file is uploaded
-      const imagePath = req.processedImage ? req.processedImage.path : cigar.image_path;
+      const imageKey = req.processedImages?.cigar?.key || cigar.image_key;
 
       // Prepare update data with required fields
-const updateData = {
-  name: req.body.name,
-  image_path: imagePath,
-  brand_id: finalBrandId,
-  flavors: req.body.flavors,
-  description: req.body.description
-};
+      const updateData = {
+        name: req.body.name,
+        image_key: imageKey,
+        brand_id: finalBrandId,
+        flavors: req.body.flavors,
+        description: req.body.description
+      };
 
-// Add optional fields only if they have values
-if (req.body.shape) updateData.shape = req.body.shape;
-if (req.body.size) updateData.size = req.body.size;
-if (req.body.color) updateData.color = req.body.color;
-if (req.body.wrap_type) updateData.wrap_type = req.body.wrap_type;
-if (req.body.filler) updateData.filler = req.body.filler;
-if (req.body.country_of_origin) updateData.country_of_origin = req.body.country_of_origin;
-if (req.body.aging) updateData.aging = parseInt(req.body.aging, 10);
-if (req.body.dimensions) updateData.dimensions = req.body.dimensions;
-if (req.body.made_by) updateData.made_by = req.body.made_by;
-if (req.body.handmade === 'true' || req.body.handmade === 'false') {
-  updateData.handmade = req.body.handmade === 'true';
-}
-
-// Add new fields
-if (req.body.price_range) {
-  const validPriceRanges = ['<$10', '$10.01 - $25', '$25.01 - $50', '$50.01 - $75', '$75.01 - $100', '$100.01<'];
-  if (!validPriceRanges.includes(req.body.price_range)) {
-      await transaction.rollback();
-      if (req.processedImage) {
-          await fsPromises.unlink(path.join(uploadsDir, req.processedImage.path));
+      // Add optional fields only if they have values
+      if (req.body.shape) updateData.shape = req.body.shape;
+      if (req.body.size) updateData.size = req.body.size;
+      if (req.body.color) updateData.color = req.body.color;
+      if (req.body.wrap_type) updateData.wrap_type = req.body.wrap_type;
+      if (req.body.filler) updateData.filler = req.body.filler;
+      if (req.body.country_of_origin) updateData.country_of_origin = req.body.country_of_origin;
+      if (req.body.aging) updateData.aging = parseInt(req.body.aging, 10);
+      if (req.body.dimensions) updateData.dimensions = req.body.dimensions;
+      if (req.body.made_by) updateData.made_by = req.body.made_by;
+      if (req.body.handmade === 'true' || req.body.handmade === 'false') {
+        updateData.handmade = req.body.handmade === 'true';
       }
-      return res.status(400).json({ error: 'Invalid price range' });
-  }
-  updateData.price_range = req.body.price_range;
-}
-if (req.body.strength) updateData.strength = req.body.strength;
-if (req.body.binder) updateData.binder = req.body.binder;
+
+      // Add new fields
+      if (req.body.price_range) {
+        const validPriceRanges = ['<$10', '$10.01 - $25', '$25.01 - $50', '$50.01 - $75', '$75.01 - $100', '$100.01<'];
+        if (!validPriceRanges.includes(req.body.price_range)) {
+            await transaction.rollback();
+            if (req.processedImages?.cigar) {
+                await deleteImage(req.processedImages.cigar.key);
+            }
+            return res.status(400).json({ error: 'Invalid price range' });
+        }
+        updateData.price_range = req.body.price_range;
+      }
+      if (req.body.strength) updateData.strength = req.body.strength;
+      if (req.body.binder) updateData.binder = req.body.binder;
 
       // Update the cigar
       await cigar.update(updateData, { transaction });
 
       // If we successfully updated and had a new image, clean up the old one
-      if (req.processedImage && oldImagePath) {
-          try {
-              await fsPromises.unlink(path.join(process.cwd(), oldImagePath));
-              console.log('Successfully deleted old cigar image:', oldImagePath);
-          } catch (error) {
-              console.error('Error deleting old cigar image:', error);
-              // Don't rollback for failed cleanup
-          }
+      if (req.processedImages?.cigar?.key && oldImageKey) {
+        try {
+            await deleteImage(oldImageKey);
+            console.log('Deleted old cigar image:', oldImageKey);
+        } catch (error) {
+            console.error('Error deleting old cigar image:', error);
+            // Don't rollback for failed cleanup
+        }
       }
 
       await transaction.commit();
@@ -624,13 +602,13 @@ if (req.body.binder) updateData.binder = req.body.binder;
   } catch (err) {
       await transaction.rollback();
       // Clean up processed image if update fails
-      if (req.processedImage) {
-          try {
-              await fsPromises.unlink(path.join(uploadsDir, req.processedImage.path));
-              console.log('Cleaned up new processed image after failed update');
-          } catch (deleteErr) {
-              console.error('Error deleting new processed image:', deleteErr);
-          }
+      if (req.processedImages?.cigar) {
+        try {
+            await deleteImage(req.processedImages.cigar.key);
+            console.log('Cleaned up new processed image after failed update');
+        } catch (deleteErr) {
+            console.error('Error deleting new processed image:', deleteErr);
+        }
       }
       console.error('Error updating cigar:', err);
       res.status(400).json({ error: 'Failed to update cigar', details: err.message });
@@ -647,18 +625,18 @@ router.delete('/cigars/:id', async (req, res) => {
       return res.status(404).json({ error: 'Cigar not found' });
     }
 
-    // Store image path for cleanup
-    const imagePath = cigar.image_path;
+    // Store image key for cleanup
+    const imageKey = cigar.image_key;
 
     // Delete the cigar
     await cigar.destroy({ transaction });
     await transaction.commit();
 
     // Clean up image file after successful database operations
-    if (imagePath) {
+    if (imageKey) {
       try {
-        await fsPromises.unlink(path.join(process.cwd(), imagePath));
-        console.log('Successfully deleted cigar image:', imagePath);
+        await deleteImage(imageKey);
+        console.log('Deleted cigar image:', imageKey);
       } catch (deleteErr) {
         console.error('Error deleting cigar image:', deleteErr);
         // Don't throw error for cleanup failure
@@ -703,7 +681,7 @@ router.get('/cigars/:id/similar', async (req, res) => {
       attributes: [
         'id',
         'name',
-        'image_path',
+        'image_key',
         'averageRating',
         'numberOfRatings',
         'flavors',
@@ -749,208 +727,211 @@ router.get('/cigars/:id/similar', async (req, res) => {
   }
 });
 
-  // New route to get flavor rankings for a cigar
+// Route to get flavor rankings for a cigar
 router.get('/cigars/:id/flavor-rankings', async (req, res) => {
-    try {
-      const cigarId = req.params.id;
-      const rankings = await FlavorRanking.findAll({
-        where: { cigarId: cigarId },
-        attributes: ['flavor', 'totalRank', 'voteCount'],
-      });
-  
-      // Calculate average ranks
-      const averageRankings = rankings.reduce((acc, ranking) => {
-        acc[ranking.flavor] = ranking.totalRank / ranking.voteCount;
-        return acc;
-      }, {});
-  
-      res.json(averageRankings);
-    } catch (error) {
-      console.error('Error fetching flavor rankings:', error);
-      res.status(500).json({ error: 'Failed to fetch flavor rankings' });
-    }
-  });
-  
-  // New route to submit flavor rankings for a cigar
-  router.get('/cigars/:id/flavor-rankings/check', auth, async (req, res) => {
-    try {
-      const userRanking = await FlavorRanking.findOne({
-        where: {
-          userId: req.user.userId,
-          cigarId: req.params.id
-        }
-      });
-  
-      res.json({
-        hasRanked: !!userRanking
-      });
-    } catch (error) {
-      console.error('Error checking flavor ranking status:', error);
-      res.status(500).json({ error: 'Failed to check flavor ranking status' });
-    }
-  });
+  try {
+    const cigarId = req.params.id;
+    const rankings = await FlavorRanking.findAll({
+      where: { cigarId: cigarId },
+      attributes: ['flavor', 'totalRank', 'voteCount'],
+    });
 
-  router.post('/cigars/:id/flavor-rankings', auth, async (req, res) => {
-    const transaction = await sequelize.transaction();
-    
-    try {
-      const cigarId = req.params.id;
-      const userId = req.user.userId;
-      const { rankings } = req.body;
+    // Calculate average ranks
+    const averageRankings = rankings.reduce((acc, ranking) => {
+      acc[ranking.flavor] = ranking.totalRank / ranking.voteCount;
+      return acc;
+    }, {});
+
+    res.json(averageRankings);
+  } catch (error) {
+    console.error('Error fetching flavor rankings:', error);
+    res.status(500).json({ error: 'Failed to fetch flavor rankings' });
+  }
+});
+
+// Route to check if user has ranked flavors
+router.get('/cigars/:id/flavor-rankings/check', auth, async (req, res) => {
+  try {
+    const userRanking = await FlavorRanking.findOne({
+      where: {
+        userId: req.user.userId,
+        cigarId: req.params.id
+      }
+    });
+
+    res.json({
+      hasRanked: !!userRanking
+    });
+  } catch (error) {
+    console.error('Error checking flavor ranking status:', error);
+    res.status(500).json({ error: 'Failed to check flavor ranking status' });
+  }
+});
+
+// Route to submit flavor rankings
+router.post('/cigars/:id/flavor-rankings', auth, async (req, res) => {
+  const transaction = await sequelize.transaction();
   
-      // Check if user has already ranked
-      const existingRankings = await FlavorRanking.findOne({
-        where: {
+  try {
+    const cigarId = req.params.id;
+    const userId = req.user.userId;
+    const { rankings } = req.body;
+
+    // Check if user has already ranked
+    const existingRankings = await FlavorRanking.findOne({
+      where: {
+        userId,
+        cigarId
+      },
+      transaction
+    });
+
+    if (existingRankings) {
+      await transaction.rollback();
+      return res.status(400).json({ error: 'You have already ranked this cigar\'s flavors' });
+    }
+
+    // Process each flavor ranking
+    for (const { flavor, rank } of rankings) {
+      // Find existing flavor ranking
+      const flavorRanking = await FlavorRanking.findOne({
+        where: { 
+          cigarId,
+          flavor
+        },
+        transaction
+      });
+
+      if (flavorRanking) {
+        // Update existing ranking
+        await   flavorRanking.update({
+          totalRank: flavorRanking.totalRank + rank,
+          voteCount: flavorRanking.voteCount + 1,
+          userId // Add the user's ID to track who ranked
+        }, { transaction });
+      } else {
+        // Create new ranking
+        await FlavorRanking.create({
+          cigarId,
           userId,
-          cigarId
-        },
-        transaction
-      });
-  
-      if (existingRankings) {
-        await transaction.rollback();
-        return res.status(400).json({ error: 'You have already ranked this cigar\'s flavors' });
+          flavor,
+          totalRank: rank,
+          voteCount: 1
+        }, { transaction });
       }
-  
-      // Process each flavor ranking
-      for (const { flavor, rank } of rankings) {
-        // Find existing flavor ranking
-        const flavorRanking = await FlavorRanking.findOne({
-          where: { 
-            cigarId,
-            flavor
-          },
-          transaction
-        });
-  
-        if (flavorRanking) {
-          // Update existing ranking
-          await flavorRanking.update({
-            totalRank: flavorRanking.totalRank + rank,
-            voteCount: flavorRanking.voteCount + 1,
-            userId // Add the user's ID to track who ranked
-          }, { transaction });
-        } else {
-          // Create new ranking
-          await FlavorRanking.create({
-            cigarId,
-            userId,
-            flavor,
-            totalRank: rank,
-            voteCount: 1
-          }, { transaction });
-        }
-      }
-  
-      await transaction.commit();
-      res.status(201).json({ message: 'Flavor rankings submitted successfully' });
-  
-    } catch (error) {
-      await transaction.rollback();
-      console.error('Error submitting flavor rankings:', error);
-      res.status(500).json({ error: 'Failed to submit flavor rankings' });
     }
-  });
 
-  router.post('/cigars/:id/rate', auth, async (req, res) => {
-    const transaction = await sequelize.transaction();
-    
-    try {
-      const cigarId = req.params.id;
-      const userId = req.user.userId;
-      const { rating } = req.body;
+    await transaction.commit();
+    res.status(201).json({ message: 'Flavor rankings submitted successfully' });
+
+  } catch (error) {
+    await transaction.rollback();
+    console.error('Error submitting flavor rankings:', error);
+    res.status(500).json({ error: 'Failed to submit flavor rankings' });
+  }
+});
+
+// Route to rate a cigar
+router.post('/cigars/:id/rate', auth, async (req, res) => {
+  const transaction = await sequelize.transaction();
   
-      if (typeof rating !== 'number' || rating < 0 || rating > 100) {
-        await transaction.rollback();
-        return res.status(400).json({ error: 'Invalid rating. Must be a number between 0 and 100.' });
-      }
-  
-      const cigar = await Cigar.findByPk(cigarId, { transaction });
-      if (!cigar) {
-        await transaction.rollback();
-        return res.status(404).json({ error: 'Cigar not found' });
-      }
-  
-      // Check for existing rating
-      const existingRating = await Rating.findOne({
-        where: {
-          user_id: userId,
-          cigar_id: cigarId
-        },
-        transaction
-      });
-  
-      if (existingRating) {
-        await transaction.rollback();
-        return res.status(400).json({ error: 'You have already rated this cigar' });
-      }
-  
-      // Create new rating
-      await Rating.create({
+  try {
+    const cigarId = req.params.id;
+    const userId = req.user.userId;
+    const { rating } = req.body;
+
+    if (typeof rating !== 'number' || rating < 0 || rating > 100) {
+      await transaction.rollback();
+      return res.status(400).json({ error: 'Invalid rating. Must be a number between 0 and 100.' });
+    }
+
+    const cigar = await Cigar.findByPk(cigarId, { transaction });
+    if (!cigar) {
+      await transaction.rollback();
+      return res.status(404).json({ error: 'Cigar not found' });
+    }
+
+    // Check for existing rating
+    const existingRating = await Rating.findOne({
+      where: {
         user_id: userId,
-        cigar_id: cigarId,
-        rating_value: rating
-      }, { transaction });
-  
-      // Get the new rating statistics using database functions
-      const ratingStats = await Rating.findAll({
-        where: { cigar_id: cigarId },
-        attributes: [
-          [Sequelize.fn('COUNT', Sequelize.col('id')), 'count'],
-          [Sequelize.fn('SUM', Sequelize.col('rating_value')), 'total'],
-          [Sequelize.fn('AVG', Sequelize.col('rating_value')), 'average']
-        ],
-        transaction
-      });
-  
-      // Extract values from the stats results
-      const numberOfRatings = parseInt(ratingStats[0].getDataValue('count'));
-      const totalRatings = parseInt(ratingStats[0].getDataValue('total'));
-      const averageRating = parseFloat(ratingStats[0].getDataValue('average'));
-  
-      // Update cigar
-      await cigar.update({
-        averageRating,
-        numberOfRatings,
-        totalRatings
-      }, { transaction });
-  
-      await transaction.commit();
-  
-      res.status(200).json({
-        message: 'Rating submitted successfully',
-        averageRating,
-        numberOfRatings
-      });
-  
-    } catch (error) {
-      await transaction.rollback();
-      console.error('Error submitting rating:', error);
-      res.status(500).json({ error: 'Failed to submit rating', details: error.message });
-    }
-  });
+        cigar_id: cigarId
+      },
+      transaction
+    });
 
-  router.get('/cigars/:id/user-rating', auth, async (req, res) => {
-    try {
-      if (!req.user || !req.user.userId) {
-        return res.status(401).json({ error: 'User not authenticated' });
-      }
-  
-      const rating = await Rating.findOne({
-        where: {
-          user_id: req.user.userId,  // Changed from req.user.id to req.user.userId
-          cigar_id: req.params.id
-        }
-      });
-  
-      res.json({
-        hasRated: !!rating,
-        rating: rating ? rating.rating_value : null
-      });
-    } catch (error) {
-      console.error('Error checking user rating:', error);
-      res.status(500).json({ error: 'Failed to check user rating' });
+    if (existingRating) {
+      await transaction.rollback();
+      return res.status(400).json({ error: 'You have already rated this cigar' });
     }
-  });
+
+    // Create new rating
+    await Rating.create({
+      user_id: userId,
+      cigar_id: cigarId,
+      rating_value: rating
+    }, { transaction });
+
+    // Get the new rating statistics using database functions
+    const ratingStats = await Rating.findAll({
+      where: { cigar_id: cigarId },
+      attributes: [
+        [Sequelize.fn('COUNT', Sequelize.col('id')), 'count'],
+        [Sequelize.fn('SUM', Sequelize.col('rating_value')), 'total'],
+        [Sequelize.fn('AVG', Sequelize.col('rating_value')), 'average']
+      ],
+      transaction
+    });
+
+    // Extract values from the stats results
+    const numberOfRatings = parseInt(ratingStats[0].getDataValue('count'));
+    const totalRatings = parseInt(ratingStats[0].getDataValue('total'));
+    const averageRating = parseFloat(ratingStats[0].getDataValue('average'));
+
+    // Update cigar
+    await cigar.update({
+      averageRating,
+      numberOfRatings,
+      totalRatings
+    }, { transaction });
+
+    await transaction.commit();
+
+    res.status(200).json({
+      message: 'Rating submitted successfully',
+      averageRating,
+      numberOfRatings
+    });
+
+  } catch (error) {
+    await transaction.rollback();
+    console.error('Error submitting rating:', error);
+    res.status(500).json({ error: 'Failed to submit rating', details: error.message });
+  }
+});
+
+// Route to get user's rating for a cigar
+router.get('/cigars/:id/user-rating', auth, async (req, res) => {
+  try {
+    if (!req.user || !req.user.userId) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    const rating = await Rating.findOne({
+      where: {
+        user_id: req.user.userId,
+        cigar_id: req.params.id
+      }
+    });
+
+    res.json({
+      hasRated: !!rating,
+      rating: rating ? rating.rating_value : null
+    });
+  } catch (error) {
+    console.error('Error checking user rating:', error);
+    res.status(500).json({ error: 'Failed to check user rating' });
+  }
+});
 
 module.exports = router;

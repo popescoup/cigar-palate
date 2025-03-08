@@ -9,6 +9,7 @@ const { DataTypes } = require('sequelize');
 const sequelize = require('../config');  // Import the Sequelize instance to connect to the database
 const fsPromises = require('fs').promises;
 const path = require('path');
+const fs = require('fs');
 
 // Define the Brand model
 const Brand = sequelize.define('Brand', {
@@ -21,11 +22,11 @@ const Brand = sequelize.define('Brand', {
             len: [1, 50],  // Ensure the brand name is between 1 and 50 characters
         },
     },
-    image_path: {
+    image_key: {
         type: DataTypes.STRING,
         allowNull: true,
         validate: {
-            is: /\.(jpg|jpeg|png)$/
+            is: /^image-[0-9]+-[0-9]+\.(jpg|jpeg|png)$/i
         }
     },
     description: {
@@ -51,15 +52,38 @@ const Brand = sequelize.define('Brand', {
 });
 
 Brand.addHook('beforeDestroy', async (brand, options) => {
-    if (brand.image_path) {
+    if (brand.image_key) {
         try {
-            await fsPromises.unlink(path.join(process.cwd(), brand.image_path));
-            console.log('Successfully deleted brand image:', brand.image_path);
+            // Dynamic import to avoid circular dependencies
+            const { deleteImage } = require('../utils/spaces-config');
+            await deleteImage(brand.image_key);
+            console.log(`Successfully deleted brand image from Spaces: ${brand.image_key}`);
         } catch (error) {
-            console.error('Error deleting brand image:', error);
-            // Don't throw error for cleanup failure
+            console.error(`Error deleting brand image ${brand.image_key}:`, error);
+            // Don't throw - we want to continue even if file deletion fails
         }
     }
 });
+
+// Add URL getters for image paths
+Brand.prototype.getImageUrl = function() {
+    // Dynamically import to avoid circular dependencies
+    const { getImageUrl } = require('../utils/spaces-config');
+    
+    if (!this.image_key) return null;
+    return getImageUrl(this.image_key);
+};
+  
+// Add toJSON method to include URL in API responses
+Brand.prototype.toJSON = function() {
+    const values = { ...this.get() };
+    
+    // Add image URL to the response
+    values.image_url = this.getImageUrl();
+    
+    return values;
+};
+
+
 
 module.exports = Brand;

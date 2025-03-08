@@ -3,6 +3,7 @@ import { PendingSubmission } from '@/types/pending';
 import axios from 'axios';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { validateFile, MAX_FILE_SIZE } from '@/utils/fileValidation';
+import { getImageUrl } from '@/utils/imageUtils';
 
 interface EditSubmissionFormProps {
   submission: PendingSubmission;
@@ -219,9 +220,9 @@ const EditSubmissionForm = ({ submission, open, onClose, onSubmissionUpdated }: 
             {brandImageError && (
               <p className="mt-1 text-sm text-red-600">{brandImageError}</p>
             )}
-            {submission.new_brand_image_path && !newBrandImage && (
+            {submission.new_brand_image_key && !newBrandImage && (
               <img
-                src={`${process.env.NEXT_PUBLIC_BACKEND_URL}/${submission.new_brand_image_path}`}
+                src={getImageUrl(submission.new_brand_image_key) || ''}
                 alt="Current brand logo"
                 className="mt-2 h-32 object-contain rounded-md"
               />
@@ -266,9 +267,9 @@ const EditSubmissionForm = ({ submission, open, onClose, onSubmissionUpdated }: 
           {imageError && (
             <p className="mt-1 text-sm text-red-600">{imageError}</p>
           )}
-          {submission.image_path && !newImage && (
+          {submission.image_key && !newImage && (
             <img
-              src={`${process.env.NEXT_PUBLIC_BACKEND_URL}/${submission.image_path}`}
+              src={getImageUrl(submission.image_key) || ''}
               alt="Current cigar"
               className="mt-2 h-32 object-cover rounded-md"
             />

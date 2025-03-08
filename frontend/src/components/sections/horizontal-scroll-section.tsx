@@ -10,13 +10,15 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import Image from 'next/image';
+import { getImageUrl } from '@/utils/imageUtils';
 
 interface ScrollableCardItemProps {
   href: string;
   title: string;
   subtitle: string;
   value: string | number;
-  imagePath?: string;
+  imageKey?: string;
+  imageUrl?: string;
   numberOfRatings?: number;
   flavors?: string | string[];
   priceRange?: string;
@@ -30,7 +32,8 @@ interface ScrollItem {
   title: string;
   subtitle: string;
   value: string | number;
-  image_path?: string;
+  image_key?: string;
+  image_url?: string;
   numberOfRatings?: number;
   flavors?: string | string[];
   price_range?: string;
@@ -182,7 +185,8 @@ const ScrollableCardItem = ({
   title,
   subtitle,
   value,
-  imagePath,
+  imageKey,
+  imageUrl,
   numberOfRatings,
   flavors,
   priceRange,
@@ -191,6 +195,9 @@ const ScrollableCardItem = ({
 }: ScrollableCardItemProps) => {
   const flavorsList = parseFlavors(flavors);
   const rating = typeof value === 'string' ? parseFloat(value) : value;
+  
+  // Determine the image source using the provided URL or by generating one from the key
+  const imageSrc = imageUrl || (imageKey ? getImageUrl(imageKey) : null);
 
   return (
     <Link href={href} className="shrink-0 w-[280px] sm:w-80 block h-full">
@@ -199,9 +206,9 @@ const ScrollableCardItem = ({
           <div className="relative">
             {/* Image Section */}
             <div className="relative h-40 sm:h-48">
-              {imagePath ? (
+              {imageSrc ? (
                 <Image
-                  src={`${process.env.NEXT_PUBLIC_BACKEND_URL}/${imagePath}`}
+                  src={imageSrc}
                   alt={title}
                   width={800}
                   height={600}
@@ -403,7 +410,8 @@ const HorizontalScrollSection = ({
                 title={item.title}
                 subtitle={item.subtitle}
                 value={item.value}
-                imagePath={item.image_path}
+                imageKey={item.image_key}
+                imageUrl={item.image_url}
                 numberOfRatings={item.numberOfRatings}
                 flavors={item.flavors}
                 priceRange={item.price_range}

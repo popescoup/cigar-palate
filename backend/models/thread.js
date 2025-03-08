@@ -16,16 +16,11 @@ const Thread = sequelize.define('Thread', {
     type: DataTypes.TEXT,
     allowNull: false,
   },
-  image_path: {
+  image_key: {
     type: DataTypes.STRING,
     allowNull: true,
     validate: {
-      is: /\.(jpg|jpeg|png)$/,
-      validPath(value) {
-        if (value && !value.startsWith('uploads/')) {
-          throw new Error('Image path must be in uploads directory');
-        }
-      }
+      is: /^image-[0-9]+-[0-9]+\.(jpg|jpeg|png)$/i
     }
   },
   user_id: {
@@ -46,7 +41,7 @@ const Thread = sequelize.define('Thread', {
     defaultValue: 0,
     allowNull: false
   },
-  total_bookmarks: {  // Add this field
+  total_bookmarks: {
     type: DataTypes.INTEGER,
     defaultValue: 0,
     allowNull: false
@@ -69,10 +64,10 @@ const Thread = sequelize.define('Thread', {
       fields: ['reply_count'],
     },
     {
-      fields: ['image_path'],
+      fields: ['image_key'],
     },
     {
-      fields: ['total_bookmarks'],  // Add this index
+      fields: ['total_bookmarks'],
     }
   ],
 });

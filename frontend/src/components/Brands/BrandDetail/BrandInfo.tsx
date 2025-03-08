@@ -1,12 +1,16 @@
 import React from 'react';
 import Image from 'next/image';
 import { Brand } from '../types';
+import { getImageUrl } from '@/utils/imageUtils';
 
 interface BrandInfoProps {
   brand: Brand;
 }
 
 const BrandInfo: React.FC<BrandInfoProps> = ({ brand }) => {
+  // Get the image source from either image_url or by generating it from image_key
+  const imageSrc = brand.image_url || (brand.image_key ? getImageUrl(brand.image_key) : null);
+
   return (
     <div className="mb-6 sm:mb-8 max-w-3xl">
       <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-4 sm:mb-6">
@@ -14,9 +18,9 @@ const BrandInfo: React.FC<BrandInfoProps> = ({ brand }) => {
       </h1>
       
       <div className="mb-4 sm:mb-6 relative w-full max-w-2xl h-40 sm:h-48 md:h-[500px]">
-      {brand.image_path ? (
+      {imageSrc ? (
         <Image
-          src={`${process.env.NEXT_PUBLIC_BACKEND_URL}/${brand.image_path}`}
+          src={imageSrc}
           alt={`${brand.name} logo`}
           fill
           className="object-contain object-left"

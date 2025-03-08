@@ -2,7 +2,9 @@
 export interface Brand {
   id: number;
   name: string;
-  image_path: string | null;
+  image_key?: string;
+  image_path?: string | null; // Keep for backward compatibility
+  image_url?: string;
   description: string | null;
   created_at?: string;
   updated_at?: string;
@@ -11,7 +13,9 @@ export interface Brand {
 export interface Cigar {
   id: number;
   name: string;
-  image_path?: string | null;
+  image_key?: string;
+  image_path?: string | null; // Keep for backward compatibility
+  image_url?: string;
   averageRating: number;
   numberOfRatings: number;
   totalRatings: number;

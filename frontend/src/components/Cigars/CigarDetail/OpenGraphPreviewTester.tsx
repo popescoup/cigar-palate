@@ -6,8 +6,8 @@ interface PreviewTesterProps {
 }
 
 const OpenGraphPreviewTester: React.FC<PreviewTesterProps> = ({ cigar }) => {
-  const standardImageUrl = cigar.image_path 
-  ? `${process.env.NEXT_PUBLIC_BACKEND_URL}/${cigar.image_path}`
+  const standardImageUrl = cigar.image_key 
+  ? `${process.env.NEXT_PUBLIC_BACKEND_URL}/${cigar.image_key}`
   : '/placeholder-cigar.jpg';
     
   // Add timestamp to prevent caching

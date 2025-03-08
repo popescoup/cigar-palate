@@ -3,10 +3,10 @@
 export interface PendingSubmission {
   id: number;
   cigar_name: string;
-  image_path: string;
+  image_key: string;
   brand_id: number | null;
   new_brand_name: string | null;
-  new_brand_image_path: string | null;
+  new_brand_image_key?: string;
   new_brand_description: string | null;
   flavors: string;
   shape: string;

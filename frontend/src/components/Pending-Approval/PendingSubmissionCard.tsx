@@ -1,5 +1,6 @@
 // src/components/Pending-Approval/PendingSubmissionCard.tsx
 import { PendingSubmission, CardProps } from '@/types/pending';
+import { getImageUrl } from '@/utils/imageUtils';
 
 interface PendingSubmissionCardProps extends CardProps {
   submission: PendingSubmission;
@@ -28,9 +29,9 @@ export const PendingSubmissionCard = ({
       </span>
     </div>
 
-    {submission.image_path && (
+    {submission.image_key && (
       <img
-        src={`${process.env.NEXT_PUBLIC_BACKEND_URL}/${submission.image_path}`}
+        src={getImageUrl(submission.image_key) || ''}
         alt={submission.cigar_name}
         className="w-full h-48 object-cover rounded-md mb-4"
       />
@@ -47,11 +48,11 @@ export const PendingSubmissionCard = ({
           </span>
         </div>
 
-        {submission.new_brand_image_path && (
+        {submission.new_brand_image_key && (
           <div className="mb-2">
             <p className="text-sm text-gray-600 mb-1">Brand Logo:</p>
             <img
-              src={`${process.env.NEXT_PUBLIC_BACKEND_URL}/${submission.new_brand_image_path}`}
+              src={getImageUrl(submission.new_brand_image_key) || ''}
               alt={`${submission.new_brand_name} logo`}
               className="w-32 h-32 object-contain rounded-md border border-yellow-200"
             />
@@ -73,7 +74,7 @@ export const PendingSubmissionCard = ({
       </div>
     )}
 
-<dl className="grid grid-cols-2 gap-4">
+    <dl className="grid grid-cols-2 gap-4">
       <div className="break-words">
         <dt className="text-gray-500">Flavors:</dt>
         <dd className="text-gray-900">{submission.flavors}</dd>

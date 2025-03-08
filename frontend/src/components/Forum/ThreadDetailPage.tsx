@@ -20,6 +20,7 @@ import BookmarkButton from '@/components/BookmarkButton';
 import { Loader2 } from 'lucide-react';
 import OPBadge from './OPBadge';
 import { useSearchParams } from 'next/navigation';
+import { getImageUrl } from '@/utils/imageUtils';
 
 interface ThreadDetailPageProps {
     threadId: number;
@@ -415,82 +416,87 @@ const ThreadDetailPage: React.FC<ThreadDetailPageProps> = ({ threadId }) => {
         return <div className="text-center py-8">Thread not found</div>;
     }
 
+    // Get the image source from either image_url or by generating it from image_key
+    const threadImageSrc = thread.image_url || 
+                          (thread.image_key ? getImageUrl(thread.image_key) : 
+                          (thread.image_key ? `${process.env.NEXT_PUBLIC_BACKEND_URL}/${thread.image_key}` : null));
+
     return (
         <div className="max-w-4xl mx-auto p-4 sm:p-6">
             <Link 
-    href="/forum"
-    className="text-blue-500 hover:text-blue-600 mb-4 inline-block"
->
-    ← Back to Forum
-</Link>
-<div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
-            <div className="flex justify-between items-start gap-4 mb-4">
-  <div className="flex-grow">
-  <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{thread.title}</h1>
-    {thread.user.id === currentUser?.userId && (
-  <div className="mt-2 flex gap-2">
-    {deletingThreadId === thread.id ? (
-      <div className="flex items-center gap-3">
-        <span className="text-sm text-gray-600">
-          Delete this thread and all its replies?
-        </span>
-        <button
-          onClick={async () => {
-            await deleteThreadMutation.mutateAsync();
-            setDeletingThreadId(null);
-          }}
-          className="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 text-sm font-medium"
-        >
-          {deleteThreadMutation.isPending ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : 'Delete'}
-        </button>
-        <button
-          onClick={() => setDeletingThreadId(null)}
-          className="px-3 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 text-sm font-medium"
-        >
-          Cancel
-        </button>
-      </div>
-    ) : (
-      <>
-        <button
-          onClick={() => setIsEditModalOpen(true)}
-          className="text-blue-600 hover:text-blue-700 text-sm font-medium"
-        >
-          Edit Thread
-        </button>
-        <button
-          onClick={() => setDeletingThreadId(thread.id)}
-          className="text-red-600 hover:text-red-700 text-sm font-medium"
-        >
-          Delete Thread
-        </button>
-      </>
-    )}
-  </div>
-)}
-  </div>
-  <div className="flex items-center gap-4">
-  <div className="flex items-center">
-    <BookmarkButton
-      threadId={threadId}
-      initialBookmarkCount={thread.total_bookmarks || 0}
-      showCount={true}
-      isLoggedIn={!!currentUser}
-      className="p-2 hover:bg-gray-100 rounded-full transition-colors"
-    />
-    <span className="text-gray-500 -ml-1">{thread.total_bookmarks || 0}</span>
-  </div>
-  <VoteButtons
-    initialLikes={thread.likes}
-    initialDislikes={thread.dislikes}
-    initialUserVote={thread.userVote}
-    onVote={handleThreadVote}
-    isLoggedIn={!!currentUser}
-  />
-  </div>
-</div>
+                href="/forum"
+                className="text-blue-500 hover:text-blue-600 mb-4 inline-block"
+            >
+                ← Back to Forum
+            </Link>
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
+                <div className="flex justify-between items-start gap-4 mb-4">
+                    <div className="flex-grow">
+                        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{thread.title}</h1>
+                        {thread.user.id === currentUser?.userId && (
+                            <div className="mt-2 flex gap-2">
+                                {deletingThreadId === thread.id ? (
+                                    <div className="flex items-center gap-3">
+                                        <span className="text-sm text-gray-600">
+                                            Delete this thread and all its replies?
+                                        </span>
+                                        <button
+                                            onClick={async () => {
+                                                await deleteThreadMutation.mutateAsync();
+                                                setDeletingThreadId(null);
+                                            }}
+                                            className="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 text-sm font-medium"
+                                        >
+                                            {deleteThreadMutation.isPending ? (
+                                                <Loader2 className="h-4 w-4 animate-spin" />
+                                            ) : 'Delete'}
+                                        </button>
+                                        <button
+                                            onClick={() => setDeletingThreadId(null)}
+                                            className="px-3 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 text-sm font-medium"
+                                        >
+                                            Cancel
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <button
+                                            onClick={() => setIsEditModalOpen(true)}
+                                            className="text-blue-600 hover:text-blue-700 text-sm font-medium"
+                                        >
+                                            Edit Thread
+                                        </button>
+                                        <button
+                                            onClick={() => setDeletingThreadId(thread.id)}
+                                            className="text-red-600 hover:text-red-700 text-sm font-medium"
+                                        >
+                                            Delete Thread
+                                        </button>
+                                    </>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                    <div className="flex items-center gap-4">
+                        <div className="flex items-center">
+                            <BookmarkButton
+                                threadId={threadId}
+                                initialBookmarkCount={thread.total_bookmarks || 0}
+                                showCount={true}
+                                isLoggedIn={!!currentUser}
+                                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                            />
+                            <span className="text-gray-500 -ml-1">{thread.total_bookmarks || 0}</span>
+                        </div>
+                        <VoteButtons
+                            initialLikes={thread.likes}
+                            initialDislikes={thread.dislikes}
+                            initialUserVote={thread.userVote}
+                            onVote={handleThreadVote}
+                            isLoggedIn={!!currentUser}
+                        />
+                    </div>
+                </div>
                 
                 <div className="flex flex-wrap gap-2 mb-4">
                     {thread.tags.map((tag) => (
@@ -505,19 +511,22 @@ const ThreadDetailPage: React.FC<ThreadDetailPageProps> = ({ threadId }) => {
                 </div>
 
                 <p className="text-gray-600 mb-4">
-                Posted by <Username user={thread.user} /> • {new Date(thread.created_at).toLocaleDateString()}
+                    Posted by <Username user={thread.user} /> • {new Date(thread.created_at).toLocaleDateString()}
                 </p>
 
                 <div className="prose max-w-none text-gray-800">
                     {thread.content}
                     
-                    {thread.image_path && !imageError && (
-                        <div className="mt-4 flex justify-center">
-                            <img
-                                src={`${process.env.NEXT_PUBLIC_BACKEND_URL}/${thread.image_path}`}
+                    {threadImageSrc && !imageError && (
+                        <div className="mt-4 flex justify-center relative w-full h-[400px]">
+                            <Image
+                                src={threadImageSrc}
                                 alt="Thread image"
-                                className="max-w-full rounded-lg shadow-md"
+                                className="rounded-lg shadow-md object-contain"
+                                fill
+                                sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
                                 onError={() => setImageError(true)}
+                                priority
                             />
                         </div>
                     )}
@@ -526,9 +535,9 @@ const ThreadDetailPage: React.FC<ThreadDetailPageProps> = ({ threadId }) => {
 
             <div className="mt-8">
                 <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-semibold text-gray-900">
-    Replies ({thread.reply_count || 0})
-</h2>
+                    <h2 className="text-xl font-semibold text-gray-900">
+                        Replies ({thread.reply_count || 0})
+                    </h2>
                     <SortControl currentSort={sortOption} onSortChange={setSortOption} />
                 </div>
                 

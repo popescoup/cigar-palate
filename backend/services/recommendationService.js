@@ -56,9 +56,15 @@ const recommendationService = {
      */
     async findSimilarUsers(userId) {
         try {
-            // Check cache first
+            // Check cache first if Redis is available
             const cacheKey = `similar_users:${userId}`;
-            const cachedSimilarUsers = await redis.get(cacheKey);
+            let cachedSimilarUsers = null;
+            
+            try {
+                cachedSimilarUsers = await redis.get(cacheKey);
+            } catch (error) {
+                console.warn('Redis cache retrieval failed:', error.message);
+            }
             
             if (cachedSimilarUsers) {
                 return cachedSimilarUsers;
@@ -94,8 +100,12 @@ const recommendationService = {
                 .filter(score => score.similarity > 0)
                 .sort((a, b) => b.similarity - a.similarity);
     
-            // Cache the results
-            await redis.set(cacheKey, sortedSimilarUsers, CACHE_DURATION);
+            // Cache the results if Redis is available
+            try {
+                await redis.set(cacheKey, sortedSimilarUsers, CACHE_DURATION);
+            } catch (error) {
+                console.warn('Redis cache storage failed:', error.message);
+            }
     
             return sortedSimilarUsers;
         } catch (error) {
@@ -163,11 +173,24 @@ const recommendationService = {
      */
     async getPaginatedRecommendations(userId, similarUsers, userInteractions, startIndex, pageSize) {
         const cacheKey = `recommendations:${userId}`;
-        let recommendedCigars = await redis.get(cacheKey);
+        let recommendedCigars = null;
+        
+        // Try to get from cache if Redis is available
+        try {
+            recommendedCigars = await redis.get(cacheKey);
+        } catch (error) {
+            console.warn('Redis cache retrieval failed:', error.message);
+        }
         
         if (!recommendedCigars) {
             recommendedCigars = await this.generateRecommendations(userId, similarUsers, userInteractions);
-            await redis.set(cacheKey, recommendedCigars, CACHE_DURATION);
+            
+            // Try to cache if Redis is available
+            try {
+                await redis.set(cacheKey, recommendedCigars, CACHE_DURATION);
+            } catch (error) {
+                console.warn('Redis cache storage failed:', error.message);
+            }
         }
 
         const paginatedCigars = recommendedCigars.slice(startIndex, startIndex + pageSize);
@@ -186,7 +209,7 @@ const recommendationService = {
                 'name',
                 'averageRating',
                 'numberOfRatings',
-                'image_path',    // Added
+                'image_key',    // Added
                 'flavors',       // Added
                 'price_range'    // Added
             ],
@@ -196,7 +219,7 @@ const recommendationService = {
             include: [{
                 model: Brand,
                 as: 'brand',
-                attributes: ['name', 'image_path']  // Added brand image_path
+                attributes: ['name', 'image_key']  // Added brand image_key
             }],
             order: [
                 [Sequelize.literal(`ARRAY_POSITION(ARRAY[${paginatedCigars.map(c => c.cigarId).join(',')}], "Cigar"."id")`)]
@@ -275,10 +298,15 @@ const recommendationService = {
             const similarUsersCacheKey = `similar_users:${userId}`;
             const recommendationsCacheKey = `recommendations:${userId}`;
             
-            await Promise.all([
-                redis.delete(similarUsersCacheKey),
-                redis.delete(recommendationsCacheKey)
-            ]);
+            // Attempt to delete from cache if Redis is available
+            try {
+                await Promise.all([
+                    redis.delete(similarUsersCacheKey),
+                    redis.delete(recommendationsCacheKey)
+                ]);
+            } catch (error) {
+                console.warn('Redis cache invalidation failed:', error.message);
+            }
         } catch (error) {
             console.error('Error invalidating user cache:', error);
             throw error;

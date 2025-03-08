@@ -3,25 +3,9 @@ const { DataTypes } = require('sequelize');
 const sequelize = require('../config');
 const User = require('./user');
 const Brand = require('./brand');
-const fs = require('fs');
-const fsPromises = require('fs').promises;
-const path = require('path');
+const { deleteImage } = require('../utils/spaces-config');
 
-// Utility function to safely delete a file
-const safeDeleteFile = async (filePath) => {
-    try {
-        if (filePath) {
-            const fullPath = path.join(process.cwd(), filePath);
-            await fsPromises.access(fullPath);
-            await fsPromises.unlink(fullPath);
-            console.log(`Successfully deleted file: ${filePath}`);
-        }
-    } catch (error) {
-        console.error(`Error deleting file ${filePath}:`, error);
-        // Don't throw - we want to continue even if file deletion fails
-    }
-};
-
+// PendingSubmission model
 const PendingSubmission = sequelize.define('PendingSubmission', {
     id: {
         type: DataTypes.INTEGER,
@@ -37,16 +21,11 @@ const PendingSubmission = sequelize.define('PendingSubmission', {
             notEmpty: true
         }
     },
-    image_path: {
+    image_key: {
         type: DataTypes.STRING,
         allowNull: false,
         validate: {
-            is: /\.(jpg|jpeg|png)$/,
-            validPath(value) {
-                if (!value.startsWith('uploads/')) {
-                    throw new Error('Image path must be in uploads directory');
-                }
-            }
+            is: /^image-[0-9]+-[0-9]+\.(jpg|jpeg|png)$/i
         }
     },
     flavors: {
@@ -195,16 +174,11 @@ const PendingSubmission = sequelize.define('PendingSubmission', {
         }
     },
     // New Brand Fields
-    new_brand_image_path: {
+    new_brand_image_key: {
         type: DataTypes.STRING,
         allowNull: true,
         validate: {
-            is: /\.(jpg|jpeg|png)$/,
-            validPath(value) {
-                if (value && !value.startsWith('uploads/')) {
-                    throw new Error('Brand image path must be in uploads directory');
-                }
-            }
+            is: /^image-[0-9]+-[0-9]+\.(jpg|jpeg|png)$/i
         }
     },
     new_brand_description: {
@@ -267,18 +241,17 @@ const PendingSubmission = sequelize.define('PendingSubmission', {
                 if (existingBrand) {
                     this.brand_id = existingBrand.id;
                     this.new_brand_name = null;
-                    this.new_brand_image_path = null;
+                    this.new_brand_image_key = null;
                     this.new_brand_description = null;
                 }
                 // Validate new brand requirements
-                else if (!this.new_brand_image_path || !this.new_brand_description) {
+                else if (!this.new_brand_image_key || !this.new_brand_description) {
                     throw new Error('New brands require both an image and description');
                 }
             }
         }
     },
     hooks: {
-        // Add this new hook first
         beforeCreate: async (submission) => {
             console.log('Before Create Hook - Data:', {
                 price_range: submission.price_range,
@@ -286,24 +259,24 @@ const PendingSubmission = sequelize.define('PendingSubmission', {
                 binder: submission.binder,
                 allData: submission.dataValues
             });
-        },
-        
-        // Your existing beforeValidate hook
-        beforeValidate: async (submission) => {
-            const checkFile = async (filePath) => {
-                if (filePath) {
-                    // Only check if path is properly formatted
-                    if (!filePath.startsWith('uploads/')) {
-                        throw new Error(`Invalid file path format: ${filePath}`);
-                    }
-                }
-            };
-    
-            await checkFile(submission.image_path);
-            await checkFile(submission.new_brand_image_path);
         }
     }
 });
+
+// Get image URL methods
+PendingSubmission.prototype.getImageUrl = function() {
+    // Dynamically import to avoid circular dependencies
+    const { getImageUrl } = require('../utils/spaces-config');
+    return getImageUrl(this.image_key);
+};
+  
+PendingSubmission.prototype.getBrandImageUrl = function() {
+    if (!this.new_brand_image_key) return null;
+    
+    // Dynamically import to avoid circular dependencies
+    const { getImageUrl } = require('../utils/spaces-config');
+    return getImageUrl(this.new_brand_image_key);
+};
 
 // Delete associated files when submission is deleted
 PendingSubmission.addHook('beforeDestroy', async (submission, options) => {
@@ -314,14 +287,14 @@ PendingSubmission.addHook('beforeDestroy', async (submission, options) => {
     }
 
     try {
-        if (submission.image_path) {
-            await safeDeleteFile(submission.image_path);
-            console.log('Deleted cigar image:', submission.image_path);
+        if (submission.image_key) {
+            await deleteImage(submission.image_key);
+            console.log('Deleted cigar image:', submission.image_key);
         }
         
-        if (submission.new_brand_image_path) {
-            await safeDeleteFile(submission.new_brand_image_path);
-            console.log('Deleted brand image:', submission.new_brand_image_path);
+        if (submission.new_brand_image_key) {
+            await deleteImage(submission.new_brand_image_key);
+            console.log('Deleted brand image:', submission.new_brand_image_key);
         }
     } catch (error) {
         console.error('Error in beforeDestroy hook:', error);
@@ -340,19 +313,14 @@ PendingSubmission.prototype.approve = async function(adminId, transaction = null
         if (this.new_brand_name) {
             console.log('Creating new brand:', {
                 name: this.new_brand_name,
-                image_path: this.new_brand_image_path
+                image_key: this.new_brand_image_key
             });
-
-            // Copy brand image before creating brand
-            if (this.new_brand_image_path) {
-                console.log('Keeping brand image:', this.new_brand_image_path);
-            }
 
             const [newBrand] = await Brand.findOrCreate({
                 where: { name: this.new_brand_name },
                 defaults: {
                     name: this.new_brand_name,
-                    image_path: this.new_brand_image_path,
+                    image_key: this.new_brand_image_key,
                     description: this.new_brand_description
                 },
                 transaction: t
@@ -361,11 +329,11 @@ PendingSubmission.prototype.approve = async function(adminId, transaction = null
         }
 
         // Create cigar with flavor handling
-        console.log('Keeping cigar image:', this.image_path);
+        console.log('Creating cigar with image key:', this.image_key);
         const approvedCigar = await sequelize.models.Cigar.create({
             name: this.cigar_name,
             brand_id: brandId,
-            image_path: this.image_path,
+            image_key: this.image_key,
             // Updated flavor handling
             flavors: Array.isArray(this.flavors) 
                 ? JSON.stringify(this.flavors)
@@ -441,9 +409,9 @@ PendingSubmission.prototype.decline = async function(adminId, notes = null, tran
             review_date: new Date()
         }, { transaction: t });
 
-        // Store paths for logging
-        const imagePath = this.image_path;
-        const brandImagePath = this.new_brand_image_path;
+        // Store keys for logging
+        const imageKey = this.image_key;
+        const brandImageKey = this.new_brand_image_key;
 
         // Delete the submission (will trigger beforeDestroy hook for file cleanup)
         await this.destroy({ transaction: t });
@@ -453,8 +421,8 @@ PendingSubmission.prototype.decline = async function(adminId, notes = null, tran
         }
 
         console.log('Successfully declined submission. Cleaned up files:', {
-            cigar: imagePath,
-            brand: brandImagePath
+            cigar: imageKey,
+            brand: brandImageKey
         });
     } catch (error) {
         console.error('Error in decline method:', error);

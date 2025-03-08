@@ -43,57 +43,114 @@ async function getData() {
   if (backendUrl === 'https://placeholder-api.com') {
     console.log('Using placeholder data for home page during build');
     return {
-      trendingCigars: {
-        cigars: [
-          { 
-            id: 1, 
-            name: 'Trending Placeholder Cigar 1', 
-            slug: 'trending-placeholder-1',
-            views: 350,
-            brand: { name: 'Placeholder Brand', slug: 'placeholder-brand' },
-            image: '/images/placeholder.jpg'
-          },
-          { 
-            id: 2, 
-            name: 'Trending Placeholder Cigar 2', 
-            slug: 'trending-placeholder-2',
-            views: 320,
-            brand: { name: 'Placeholder Brand', slug: 'placeholder-brand' },
-            image: '/images/placeholder.jpg'
-          }
-        ]
-      },
-      topRatedCigars: {
-        cigars: [
-          { 
-            id: 1, 
-            name: 'Top Rated Placeholder Cigar 1', 
-            slug: 'top-rated-placeholder-1',
-            rating: 4.9,
-            brand: { name: 'Placeholder Brand', slug: 'placeholder-brand' },
-            image: '/images/placeholder.jpg'
-          },
-          { 
-            id: 2, 
-            name: 'Top Rated Placeholder Cigar 2', 
-            slug: 'top-rated-placeholder-2',
-            rating: 4.8,
-            brand: { name: 'Placeholder Brand', slug: 'placeholder-brand' },
-            image: '/images/placeholder.jpg'
-          }
-        ]
-      }
+      trendingCigars: [
+        { 
+          id: 1, 
+          name: 'Trending Placeholder Cigar 1', 
+          brand: { name: 'Placeholder Brand' },
+          image_key: '/images/placeholder.jpg',
+          averageRating: 4.5,
+          numberOfRatings: 100
+        },
+        { 
+          id: 2, 
+          name: 'Trending Placeholder Cigar 2', 
+          brand: { name: 'Placeholder Brand' },
+          image_key: '/images/placeholder.jpg',
+          averageRating: 4.3,
+          numberOfRatings: 80
+        }
+      ],
+      topRatedCigars: [
+        { 
+          id: 1, 
+          name: 'Top Rated Placeholder Cigar 1', 
+          brand: { name: 'Placeholder Brand' },
+          image_key: '/images/placeholder.jpg',
+          averageRating: 4.9,
+          numberOfRatings: 150
+        },
+        { 
+          id: 2, 
+          name: 'Top Rated Placeholder Cigar 2', 
+          brand: { name: 'Placeholder Brand' },
+          image_key: '/images/placeholder.jpg',
+          averageRating: 4.8,
+          numberOfRatings: 130
+        }
+      ],
+      topRatedBrands: [
+        {
+          id: 1,
+          name: 'Top Rated Brand 1',
+          image_key: '/images/placeholder.jpg',
+          avgRating: 4.8,
+          cigarCount: 25
+        },
+        {
+          id: 2,
+          name: 'Top Rated Brand 2',
+          image_key: '/images/placeholder.jpg',
+          avgRating: 4.7,
+          cigarCount: 18
+        }
+      ],
+      trendingBrands: [
+        {
+          id: 1,
+          name: 'Trending Brand 1',
+          image_key: '/images/placeholder.jpg',
+          avgRating: 4.6,
+          cigarCount: 30
+        },
+        {
+          id: 2,
+          name: 'Trending Brand 2',
+          image_key: '/images/placeholder.jpg',
+          avgRating: 4.5,
+          cigarCount: 22
+        }
+      ]
     };
   }
   
-  const [trendingCigars, topRatedCigars] = await Promise.all([
-    fetch(`${backendUrl}/api/cigars/trending?limit=4`, { next: { revalidate: 3600 } }),
-    fetch(`${backendUrl}/api/cigars/top-rated?limit=4`, { next: { revalidate: 3600 } })
+  // Fetch all four data collections in parallel
+  const [trendingCigars, topRatedCigars, topRatedBrands, trendingBrands] = await Promise.all([
+    fetch(`${backendUrl}/api/cigars/trending?limit=10`, { 
+      next: { revalidate: 3600 },
+      headers: { 'Cache-Control': 'no-cache' }
+    }),
+    fetch(`${backendUrl}/api/cigars/top-rated?limit=10`, { 
+      next: { revalidate: 3600 },
+      headers: { 'Cache-Control': 'no-cache' }
+    }),
+    fetch(`${backendUrl}/api/brands/top-rated?limit=10`, { 
+      next: { revalidate: 3600 },
+      headers: { 'Cache-Control': 'no-cache' }
+    }),
+    fetch(`${backendUrl}/api/brands/trending?limit=10`, { 
+      next: { revalidate: 3600 },
+      headers: { 'Cache-Control': 'no-cache' }
+    })
   ]);
 
+  // Handle potential fetch errors
+  if (!trendingCigars.ok || !topRatedCigars.ok || !topRatedBrands.ok || !trendingBrands.ok) {
+    console.error('Error fetching collection data');
+    return {
+      trendingCigars: [],
+      topRatedCigars: [],
+      topRatedBrands: [],
+      trendingBrands: []
+    };
+  }
+
+  // Parse all responses
   return {
     trendingCigars: await trendingCigars.json(),
-    topRatedCigars: await topRatedCigars.json()
+    topRatedCigars: await topRatedCigars.json(),
+    topRatedBrands: await topRatedBrands.json(),
+    trendingBrands: await trendingBrands.json()
   };
 }
 

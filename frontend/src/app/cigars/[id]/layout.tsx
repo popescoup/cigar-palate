@@ -68,8 +68,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     };
 
     // Only add image metadata if an image exists
-    if (cigar.image_path) {
-      const imageUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/${cigar.image_path}`;
+    if (cigar.image_key) {
+      const imageUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/${cigar.image_key}`;
       metadata.openGraph = {
         ...metadata.openGraph,
         images: [{

@@ -9,6 +9,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { getImageUrl } from '@/utils/imageUtils';
 
 interface CardBadgeProps {
   icon?: LucideIcon;
@@ -66,12 +67,16 @@ interface DiscoverBrandCardProps {
     avgRating: number | null;
     cigarCount: number;
     totalRecentInteractions?: number;
-    image_path?: string;
+    image_key?: string;
+    image_url?: string;
   };
   variant?: 'rated' | 'trending';
 }
 
 export const DiscoverBrandCard: React.FC<DiscoverBrandCardProps> = ({ brand, variant = 'rated' }) => {
+  // Get the image source from either image_url or by generating it from image_key
+  const imageSrc = brand.image_url || (brand.image_key ? getImageUrl(brand.image_key) : null);
+
   return (
     <Link href={`/brands/${brand.id}`} className="block h-full">
       <Card className="h-full transition-all duration-300 hover:shadow-lg">
@@ -79,9 +84,9 @@ export const DiscoverBrandCard: React.FC<DiscoverBrandCardProps> = ({ brand, var
           <div className="relative">
             {/* Image Section */}
             <div className="relative h-40 sm:h-48">
-              {brand.image_path ? (
+              {imageSrc ? (
                 <Image
-                  src={`${process.env.NEXT_PUBLIC_BACKEND_URL}/${brand.image_path}`}
+                  src={imageSrc}
                   alt={brand.name}
                   width={800}
                   height={600}

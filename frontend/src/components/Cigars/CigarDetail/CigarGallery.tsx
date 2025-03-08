@@ -1,16 +1,18 @@
 import React, { useState } from 'react';
 import Image from 'next/image';
 import type { Cigar } from '@/types/cigars';
+import { getImageUrl } from '@/utils/imageUtils';
 
 interface CigarGalleryProps {
   cigar: Cigar;
 }
 
 const CigarGallery: React.FC<CigarGalleryProps> = ({ cigar }) => {
-  const [imgSrc, setImgSrc] = useState(`${process.env.NEXT_PUBLIC_BACKEND_URL}/${cigar.image_path}`);
+  // Use the image_key directly with no fallback
+  const [imgSrc, setImgSrc] = useState<string | null>(getImageUrl(cigar.image_key) || '');
   const [isError, setIsError] = useState(false);
 
-  if (!cigar.image_path) {
+  if (!cigar.image_key) {
     return null;
   }
 
@@ -18,7 +20,7 @@ const CigarGallery: React.FC<CigarGalleryProps> = ({ cigar }) => {
     <section className="w-full py-6 sm:py-12 -ml-2 sm:-ml-4">
       <div className="relative w-full">
         <Image 
-          src={imgSrc}
+          src={imgSrc || '/placeholder-cigar.jpg'}
           alt={cigar.name}
           width={1200}
           height={900}

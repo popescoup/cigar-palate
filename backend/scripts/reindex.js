@@ -239,7 +239,6 @@ async function reindexAll() {
         console.error('Reindex failed:', error);
         throw error;
     } finally {
-        await sequelize.close();
     }
 }
 

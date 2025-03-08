@@ -10,6 +10,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Cigar } from '@/types/cigars';
+import { getImageUrl } from '@/utils/imageUtils';
 
 interface CardBadgeProps {
   icon?: LucideIcon;
@@ -126,6 +127,9 @@ const CigarCard: React.FC<CigarCardProps> = ({ cigar }) => {
   };
 
   const flavorsList = parseFlavors(cigar.flavors);
+  
+  // Get the image source from either image_url or by generating it from image_key
+  const imageSrc = cigar.image_url || (cigar.image_key ? getImageUrl(cigar.image_key) : null);
 
   return (
     <Link href={`/cigars/${cigar.id}`} className="block h-full">
@@ -134,9 +138,9 @@ const CigarCard: React.FC<CigarCardProps> = ({ cigar }) => {
           <div className="relative">
             {/* Image Section */}
             <div className="relative h-40 sm:h-48">
-              {cigar.image_path ? (
+              {imageSrc ? (
                 <Image
-                  src={`${process.env.NEXT_PUBLIC_BACKEND_URL}/${cigar.image_path}`}
+                  src={imageSrc}
                   alt={cigar.name}
                   width={800}
                   height={600}

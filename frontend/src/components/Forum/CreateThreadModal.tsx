@@ -3,6 +3,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Thread, CreateThreadData } from '@/types/forum';
 import { ImagePlus, X } from 'lucide-react';
+import Image from 'next/image';
+import { getImageUrl } from '@/utils/imageUtils';
 
 interface CreateThreadModalProps {
   isOpen: boolean;
@@ -60,8 +62,14 @@ const CreateThreadModal: React.FC<CreateThreadModalProps> = ({
       setTitle(initialData.title);
       setContent(initialData.content);
       setTags(initialData.tags.map(tag => tag.name).join(', '));
-      if (initialData.image_path) {
-        setImagePreview(`${process.env.NEXT_PUBLIC_BACKEND_URL}/${initialData.image_path}`);
+      
+      // Get image URL from either image_url or image_key or image_path
+      const imageUrl = initialData.image_url || 
+                       (initialData.image_key ? getImageUrl(initialData.image_key) : 
+                       (initialData.image_key ? `${process.env.NEXT_PUBLIC_BACKEND_URL}/${initialData.image_key}` : null));
+                       
+      if (imageUrl) {
+        setImagePreview(imageUrl);
       }
     }
   }, [isEditing, initialData]);
@@ -81,7 +89,7 @@ const CreateThreadModal: React.FC<CreateThreadModalProps> = ({
   // Cleanup preview URL on unmount
   useEffect(() => {
     return () => {
-      if (imagePreview && !imagePreview.startsWith('/uploads/')) {
+      if (imagePreview && !imagePreview.startsWith('/') && !imagePreview.startsWith('http')) {
         URL.revokeObjectURL(imagePreview);
       }
     };
@@ -102,7 +110,7 @@ const CreateThreadModal: React.FC<CreateThreadModalProps> = ({
   
     // Check image dimensions
     return new Promise((resolve) => {
-      const img = new Image();
+      const img = new window.Image();
       img.onload = () => {
         URL.revokeObjectURL(img.src);
         if (img.width < 50 || img.height < 50) {
@@ -162,16 +170,16 @@ const CreateThreadModal: React.FC<CreateThreadModalProps> = ({
   
       // Process and validate tags
       const tagArray = tags
-  .split(',')
-  .map(tag => sanitizeInput(tag.trim()).toLowerCase())
-  .filter(tag => tag.length > 0);
+        .split(',')
+        .map(tag => sanitizeInput(tag.trim()).toLowerCase())
+        .filter(tag => tag.length > 0);
 
-const tagsError = validateContent.tags(tagArray);
-if (tagsError) {
-  setError(tagsError);
-  setIsSubmitting(false);
-  return;
-}
+      const tagsError = validateContent.tags(tagArray);
+      if (tagsError) {
+        setError(tagsError);
+        setIsSubmitting(false);
+        return;
+      }
   
       // Validate image if present
       if (imageFile) {
@@ -204,19 +212,19 @@ if (tagsError) {
     }
   };
 
-const handleRemoveImage = () => {
-  if (imagePreview && !imagePreview.startsWith('/uploads/')) {
+  const handleRemoveImage = () => {
+    if (imagePreview && !imagePreview.startsWith('/') && !imagePreview.startsWith('http')) {
       URL.revokeObjectURL(imagePreview);
-  }
-  setImageFile(null);
-  setImagePreview(null);
-  if (fileInputRef.current) {
+    }
+    setImageFile(null);
+    setImagePreview(null);
+    if (fileInputRef.current) {
       fileInputRef.current.value = '';
-  }
-};
+    }
+  };
 
   const handleClose = () => {
-    if (imagePreview && !imagePreview.startsWith('/uploads/')) {
+    if (imagePreview && !imagePreview.startsWith('/') && !imagePreview.startsWith('http')) {
       URL.revokeObjectURL(imagePreview);
     }
     setTitle('');
@@ -307,11 +315,13 @@ const handleRemoveImage = () => {
                 )}
               </div>
               {imagePreview && (
-                <div className="mt-2">
-                  <img
+                <div className="mt-2 relative h-40 sm:h-48">
+                  <Image
                     src={imagePreview}
                     alt="Preview"
-                    className="max-h-40 sm:max-h-48 rounded-md"
+                    className="rounded-md object-contain"
+                    fill
+                    sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
                   />
                 </div>
               )}

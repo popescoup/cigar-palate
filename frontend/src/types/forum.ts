@@ -15,7 +15,9 @@ export interface Thread {
   user_id: number;
   created_at: string;
   updated_at: string;
-  image_path: string | null;  // Add this line
+  image_key: string | null;  // New property for DO Spaces
+  image_url?: string | null;  // URL provided by backend
+  image_path?: string | null;  // Keep for backward compatibility
   user: User;
   tags: Tag[];
   replies?: Reply[];

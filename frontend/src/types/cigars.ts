@@ -16,7 +16,8 @@ export interface Cigar {
     aging: number;
     handmade: boolean;
     description: string;
-    image_path: string;
+    image_key: string;
+    image_url?: string;
     price_range: string;
     strength: string;
     binder: string;

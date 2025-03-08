@@ -26,6 +26,9 @@ const Rating = require('./rating');
 const ThreadBookmark = require('./ThreadBookmark');
 const Follow = require('./follow');
 const Notification = require('./notification');
+const fs = require('fs');
+const fsPromises = require('fs').promises;
+const path = require('path');
 
 // Forum system models
 const Thread = require('./thread');
@@ -49,11 +52,11 @@ const Cigar = sequelize.define('Cigar', {
         },
         index: true,
     },
-    image_path: {
+    image_key: {
         type: DataTypes.STRING,
         allowNull: false,
         validate: {
-            is: /\.(jpg|jpeg|png)$/,
+            is: /^image-[0-9]+-[0-9]+\.(jpg|jpeg|png)$/i
         },
     },
     brand_id: {
@@ -550,6 +553,40 @@ Thread.hasMany(ThreadBookmark, {
 User.hasMany(ThreadBookmark, {
     foreignKey: 'user_id',
     as: 'threadBookmarks'
+});
+
+// Add URL getters for image paths
+Cigar.prototype.getImageUrl = function() {
+    // Dynamically import to avoid circular dependencies
+    const { getImageUrl } = require('../utils/spaces-config');
+    
+    if (!this.image_key) return null;
+    return getImageUrl(this.image_key);
+};
+  
+// Add toJSON method to include URL in API responses
+Cigar.prototype.toJSON = function() {
+    const values = { ...this.get() };
+    
+    // Add image URL to the response
+    values.image_url = this.getImageUrl();
+    
+    return values;
+};
+
+// Delete associated image file when cigar is deleted
+Cigar.addHook('beforeDestroy', async (cigar, options) => {
+    try {
+        if (cigar.image_key) {
+            // Dynamic import to avoid circular dependencies
+            const { deleteImage } = require('../utils/spaces-config');
+            await deleteImage(cigar.image_key);
+            console.log(`Successfully deleted cigar image from Spaces:`, cigar.image_key);
+        }
+    } catch (error) {
+        console.error(`Error deleting cigar image ${cigar.image_key}:`, error);
+        // Don't throw - we want to continue even if file deletion fails
+    }
 });
 
 module.exports = Cigar;

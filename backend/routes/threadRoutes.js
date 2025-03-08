@@ -3,48 +3,13 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const path = require('path');
-const fs = require('fs');
-const fsPromises = require('fs').promises;
 const { Thread, User, Tag, Reply, ThreadTag, Vote, Follow, Notification } = require('../models');
 const sequelize = require('../config');
 const { auth } = require('../middleware/auth');
 const { body, validationResult } = require('express-validator');
 const { Op } = require('sequelize');
-const { upload, processAndSaveImage } = require('../config/multerConfig');
-
-// File handling configuration
-const uploadsDir = path.join(process.cwd(), 'uploads');
-if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir, { recursive: true, mode: 0o755 });
-}
-
-const uploadMiddleware = (req, res, next) => {
-    upload.single('image')(req, res, async function(err) {
-        if (err) {
-            return res.status(400).json({
-                error: 'File upload failed',
-                details: err.message
-            });
-        }
-        
-        try {
-            if (req.file) {
-                const processedImage = await processAndSaveImage(
-                    req.file,
-                    uploadsDir,
-                    `thread-image-${Date.now()}-${Math.round(Math.random() * 1E9)}${path.extname(req.file.originalname)}`
-                );
-                req.processedImage = processedImage;
-            }
-            next();
-        } catch (error) {
-            return res.status(400).json({
-                error: 'Image processing failed',
-                details: error.message
-            });
-        }
-    });
-};
+const spacesUploadMiddleware = require('../middleware/spacesUploadMiddleware');
+const { deleteImage } = require('../utils/spaces-config');
 
 // Validation middleware
 const threadValidation = [
@@ -67,19 +32,6 @@ const threadValidation = [
         })
 ];
 
-// Utility functions
-const safeDeleteFile = async (filePath) => {
-    try {
-        if (filePath) {
-            const fullPath = filePath.startsWith('/') ? filePath : path.join(process.cwd(), filePath);
-            await fsPromises.access(fullPath);
-            await fsPromises.unlink(fullPath);
-        }
-    } catch (error) {
-        console.error(`Error deleting file ${filePath}:`, error);
-    }
-};
-
 const getTrendingThreads = async (limit = null, page = null, itemsPerPage = null) => {
     const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
   
@@ -92,8 +44,8 @@ const getTrendingThreads = async (limit = null, page = null, itemsPerPage = null
         'created_at',
         'updated_at',
         'vote_count',
-        'reply_count',  // Add reply_count to attributes
-        'image_path',
+        'reply_count',
+        'image_key',
         [
           sequelize.literal(`(
             SELECT COUNT(*)::integer 
@@ -177,7 +129,7 @@ const getTrendingThreads = async (limit = null, page = null, itemsPerPage = null
           likes: votes.filter(vote => vote.vote_type === 'like').length,
           dislikes: votes.filter(vote => vote.vote_type === 'dislike').length,
           totalRecentInteractions: threadJson.recentVotesCount + threadJson.recentRepliesCount,
-          replyCount: threadJson.reply_count, // Map reply_count to replyCount
+          replyCount: threadJson.reply_count,
           votes: undefined
         };
       });
@@ -200,7 +152,7 @@ const getTrendingThreads = async (limit = null, page = null, itemsPerPage = null
           likes: votes.filter(vote => vote.vote_type === 'like').length,
           dislikes: votes.filter(vote => vote.vote_type === 'dislike').length,
           totalRecentInteractions: threadJson.recentVotesCount + threadJson.recentRepliesCount,
-          replyCount: threadJson.reply_count, // Map reply_count to replyCount
+          replyCount: threadJson.reply_count,
           votes: undefined
         };
       });
@@ -221,8 +173,8 @@ const getThreads = async (sortBy = 'trending', page = 1, limit = 10, userId = nu
         'created_at',
         'updated_at',
         'vote_count',
-        'reply_count',  // Add reply_count to attributes
-        'image_path'
+        'reply_count',
+        'image_key'
       ],
       include: [
         {
@@ -276,7 +228,7 @@ const getThreads = async (sortBy = 'trending', page = 1, limit = 10, userId = nu
         likes: threadVotes.filter(vote => vote.vote_type === 'like').length,
         dislikes: threadVotes.filter(vote => vote.vote_type === 'dislike').length,
         userVote: userId ? threadVotes.find(vote => vote.user_id === userId)?.vote_type || null : null,
-        replyCount: threadJson.reply_count, // Map reply_count to replyCount
+        replyCount: threadJson.reply_count,
         votes: undefined
       };
     });
@@ -360,11 +312,11 @@ router.get('/', async (req, res) => {
 });
 
 // Create new thread
-router.post('/', [auth, uploadMiddleware, threadValidation], async (req, res) => {
+router.post('/', [auth, spacesUploadMiddleware, threadValidation], async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-        if (req.processedImage?.path) {
-            await safeDeleteFile(path.join(uploadsDir, req.processedImage.path));
+        if (req.processedImages?.thread) {
+            await deleteImage(req.processedImages.thread.key);
         }
         return res.status(400).json({ errors: errors.array() });
     }
@@ -381,12 +333,12 @@ router.post('/', [auth, uploadMiddleware, threadValidation], async (req, res) =>
     const transaction = await sequelize.transaction();
 
     try {
-        const imagePath = req.processedImage?.path ? path.join('uploads', req.processedImage.path) : null;
+        const imageKey = req.processedImages?.thread?.key || null;
 
         const thread = await Thread.create({
             title: req.body.title,
             content: req.body.content,
-            image_path: imagePath,
+            image_key: imageKey,
             user_id: req.user.userId,
             vote_count: 1
         }, { transaction });
@@ -456,8 +408,8 @@ router.post('/', [auth, uploadMiddleware, threadValidation], async (req, res) =>
         });
     } catch (err) {
         await transaction.rollback();
-        if (req.processedImage?.path) {
-            await safeDeleteFile(path.join(uploadsDir, req.processedImage.path));
+        if (req.processedImages?.thread) {
+            await deleteImage(req.processedImages.thread.key);
         }
         console.error('Error creating thread:', err);
         res.status(500).json({ error: 'Server error' });
@@ -599,38 +551,38 @@ router.get('/:id', async (req, res) => {
 });
 
 // Update thread
-router.put('/:id', [auth, uploadMiddleware], async (req, res) => {
+router.put('/:id', [auth, spacesUploadMiddleware], async (req, res) => {
     const transaction = await sequelize.transaction();
 
     try {
         const thread = await Thread.findByPk(req.params.id);
         
         if (!thread) {
-            if (req.processedImage?.path) {
-                await safeDeleteFile(path.join(uploadsDir, req.processedImage.path));
+            if (req.processedImages?.thread) {
+                await deleteImage(req.processedImages.thread.key);
             }
             await transaction.rollback();
             return res.status(404).json({ error: 'Thread not found' });
         }
 
         if (thread.user_id !== req.user.userId) {
-            if (req.processedImage?.path) {
-                await safeDeleteFile(path.join(uploadsDir, req.processedImage.path));
+            if (req.processedImages?.thread) {
+                await deleteImage(req.processedImages.thread.key);
             }
             await transaction.rollback();
             return res.status(403).json({ error: 'Not authorized to update this thread' });
         }
 
-        const oldImagePath = thread.image_path;
+        const oldImageKey = thread.image_key;
 
-        let newImagePath;
-if (req.processedImage?.path) {
-    newImagePath = path.join('uploads', req.processedImage.path);
-} else if (req.body.removeImage === 'true') {
-    newImagePath = null;
-} else {
-    newImagePath = oldImagePath;
-}
+        let newImageKey;
+        if (req.processedImages?.thread) {
+            newImageKey = req.processedImages.thread.key;
+        } else if (req.body.removeImage === 'true') {
+            newImageKey = null;
+        } else {
+            newImageKey = oldImageKey;
+        }
 
         let parsedTags = [];
         if (req.body.tags) {
@@ -646,7 +598,7 @@ if (req.processedImage?.path) {
         await thread.update({
             title: req.body.title || thread.title,
             content: req.body.content || thread.content,
-            image_path: newImagePath
+            image_key: newImageKey
         }, { transaction });
 
         if (parsedTags.length > 0) {
@@ -662,8 +614,8 @@ if (req.processedImage?.path) {
             await thread.setTags(updatedTags, { transaction });
         }
 
-        if ((req.processedImage?.path || req.body.removeImage === 'true') && oldImagePath) {
-            await safeDeleteFile(path.join(uploadsDir, oldImagePath));
+        if ((req.processedImages?.thread || req.body.removeImage === 'true') && oldImageKey) {
+            await deleteImage(oldImageKey);
         }
 
         await transaction.commit();
@@ -705,8 +657,8 @@ if (req.processedImage?.path) {
         });
     } catch (err) {
         await transaction.rollback();
-        if (req.processedImage?.path) {
-            await safeDeleteFile(path.join(uploadsDir, req.processedImage.path));
+        if (req.processedImages?.thread) {
+            await deleteImage(req.processedImages.thread.key);
         }
         console.error('Error updating thread:', err);
         res.status(500).json({ error: 'Server error', details: err.message });
@@ -794,9 +746,9 @@ router.delete('/:id', auth, async (req, res) => {
         });
 
         // Delete the thread's image if it exists
-        const imagePath = thread.image_path;
-        if (imagePath) {
-            await safeDeleteFile(path.join(uploadsDir, imagePath));
+        const imageKey = thread.image_key;
+        if (imageKey) {
+            await deleteImage(imageKey);
         }
 
         // Finally delete the thread
@@ -820,7 +772,7 @@ router.use((err, req, res, next) => {
         if (err.code === 'LIMIT_FILE_SIZE') {
             return res.status(400).json({
                 error: 'File upload failed',
-                details: 'File size cannot exceed 3.5MB'  // Updated to match new limit
+                details: 'File size cannot exceed 3.5MB'
             });
         }
         return res.status(400).json({
@@ -846,10 +798,10 @@ router.post('/threads/:id/recalculate-votes', auth, async (req, res) => {
       console.error('Error recalculating vote count:', error);
       res.status(500).json({ error: 'Failed to recalculate vote count' });
     }
-  });
+});
   
-  // Recalculate votes for all threads
-  router.post('/threads/recalculate-all-votes', auth, async (req, res) => {
+// Recalculate votes for all threads
+router.post('/threads/recalculate-all-votes', auth, async (req, res) => {
     try {
       const result = await recalculateThreadVoteCounts();
       res.json({ message: 'All vote counts recalculated successfully', ...result });
@@ -857,6 +809,6 @@ router.post('/threads/:id/recalculate-votes', auth, async (req, res) => {
       console.error('Error recalculating vote counts:', error);
       res.status(500).json({ error: 'Failed to recalculate vote counts' });
     }
-  });
+});
 
 module.exports = router;

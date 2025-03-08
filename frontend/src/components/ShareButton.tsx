@@ -19,8 +19,8 @@ const ShareButton: React.FC<ShareButtonProps> = ({ cigar }) => {
   const [copied, setCopied] = useState(false);
   
   const url = typeof window !== 'undefined' ? window.location.href : '';
-  const imageUrl = cigar.image_path 
-  ? `${process.env.NEXT_PUBLIC_BACKEND_URL}/${cigar.image_path}`
+  const imageUrl = cigar.image_key
+  ? `${process.env.NEXT_PUBLIC_BACKEND_URL}/${cigar.image_key}`
   : '/placeholder-cigar.jpg';
 
   const handleCopy = async () => {

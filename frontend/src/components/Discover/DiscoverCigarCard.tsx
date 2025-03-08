@@ -9,6 +9,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { getImageUrl } from '@/utils/imageUtils';
 
 interface CardBadgeProps {
   icon?: LucideIcon;
@@ -115,7 +116,8 @@ interface DiscoverCigarCardProps {
     numberOfRatings: number;
     totalRecentInteractions?: number;
     similarityScore?: number;
-    image_path?: string;
+    image_key?: string;
+    image_url?: string;
     flavors?: string;
     price_range?: string;
     brand?: {
@@ -140,6 +142,9 @@ export const DiscoverCigarCard: React.FC<DiscoverCigarCardProps> = ({ cigar, var
   };
 
   const flavorsList = parseFlavors(cigar.flavors);
+  
+  // Get the image source using image_url or by generating it from image_key
+  const imageSrc = cigar.image_url || (cigar.image_key ? getImageUrl(cigar.image_key) : null);
 
   return (
     <Link href={`/cigars/${cigar.id}`} className="block h-full">
@@ -148,9 +153,9 @@ export const DiscoverCigarCard: React.FC<DiscoverCigarCardProps> = ({ cigar, var
           <div className="relative">
             {/* Image Section */}
             <div className="relative h-40 sm:h-48">
-              {cigar.image_path ? (
+              {imageSrc ? (
                 <Image
-                  src={`${process.env.NEXT_PUBLIC_BACKEND_URL}/${cigar.image_path}`}
+                  src={imageSrc}
                   alt={cigar.name}
                   width={800}
                   height={600}

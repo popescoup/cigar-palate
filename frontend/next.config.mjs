@@ -1,8 +1,13 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   images: {
-    domains: ['192.168.1.243'], // local IP
-    // When you deploy, you'll also add your production domain here
+    domains: [
+      '192.168.1.243',
+      
+      'cigar-palate-images.nyc3.cdn.digitaloceanspaces.com',
+      
+      'cigar-palate-images.nyc3.digitaloceanspaces.com',
+    ],
   },
   async rewrites() {
     return [

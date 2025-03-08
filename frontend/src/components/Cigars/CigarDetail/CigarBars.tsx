@@ -31,7 +31,8 @@ const CigarBars: React.FC<CigarBarsProps> = ({
               title: cigar.name,
               subtitle: cigar.brand?.name || 'Unknown Brand',
               value: cigar.averageRating,
-              image_path: cigar.image_path,
+              image_key: cigar.image_key,
+              image_url: cigar.image_url, // Pass the pre-calculated URL if available
               numberOfRatings: cigar.numberOfRatings,
               flavors: cigar.flavors,
               price_range: cigar.price_range
@@ -55,7 +56,8 @@ const CigarBars: React.FC<CigarBarsProps> = ({
             title: cigar.name,
             subtitle: cigar.brand?.name || 'Unknown Brand',
             value: cigar.averageRating,
-            image_path: cigar.image_path,
+            image_key: cigar.image_key,
+            image_url: cigar.image_url, // Pass the pre-calculated URL if available
             numberOfRatings: cigar.numberOfRatings,
             flavors: cigar.flavors,
             price_range: cigar.price_range

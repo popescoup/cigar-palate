@@ -12,10 +12,15 @@ import { withSearchParams } from '@/hoc/withSearchParams';
 
 // API functions
 const fetchPendingSubmissions = async (): Promise<PendingSubmission[]> => {
-  const { data } = await axios.get('/api/pending-submissions', {
-    withCredentials: true
-  });
-  return data;
+  try {
+    const { data } = await axios.get('/api/pending-submissions', {
+      withCredentials: true
+    });
+    return data;
+  } catch (error) {
+    console.error("Error fetching pending submissions:", error);
+    throw error;
+  }
 };
 
 function PendingApprovals() {
@@ -27,6 +32,7 @@ function PendingApprovals() {
   const [selectedItems, setSelectedItems] = useState<number[]>([]);
   const [adminNotes, setAdminNotes] = useState<string>('');
   const [editingSubmission, setEditingSubmission] = useState<PendingSubmission | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   // Fetch pending submissions
   const { 
@@ -43,74 +49,109 @@ function PendingApprovals() {
   // Approve submission mutation
   const approveMutation = useMutation({
     mutationFn: async (id: number) => {
-      await axios.post(
-        `/api/pending-submissions/${id}/approve`,
-        {},
-        { withCredentials: true }
-      );
-      return id;
+      try {
+        const response = await axios.post(
+          `/api/pending-submissions/${id}/approve`,
+          {},
+          { withCredentials: true }
+        );
+        return { id, data: response.data };
+      } catch (error) {
+        console.error(`Error approving submission ${id}:`, error);
+        throw error;
+      }
     },
-    onSuccess: (id) => {
+    onSuccess: ({ id }) => {
       queryClient.setQueryData(
         ['pendingSubmissions'],
         (old: PendingSubmission[] | undefined) => 
           old ? old.filter(sub => sub.id !== id) : []
       );
       setSelectedItems(prev => prev.filter(item => item !== id));
+      setActionError(null);
+    },
+    onError: (error) => {
+      console.error("Approval error:", error);
+      setActionError(`Approval failed: ${(error as any)?.response?.data?.error || 'Unknown error'}`);
     }
   });
 
   // Decline submission mutation
   const declineMutation = useMutation({
     mutationFn: async ({ id, notes }: { id: number; notes: string }) => {
-      await axios.post(
-        `/api/pending-submissions/${id}/decline`,
-        { notes },
-        { withCredentials: true }
-      );
-      return id;
+      try {
+        const response = await axios.post(
+          `/api/pending-submissions/${id}/decline`,
+          { notes },
+          { withCredentials: true }
+        );
+        return { id, data: response.data };
+      } catch (error) {
+        console.error(`Error declining submission ${id}:`, error);
+        throw error;
+      }
     },
-    onSuccess: (id) => {
+    onSuccess: ({ id }) => {
       queryClient.setQueryData(
         ['pendingSubmissions'],
         (old: PendingSubmission[] | undefined) => 
           old ? old.filter(sub => sub.id !== id) : []
       );
       setSelectedItems(prev => prev.filter(item => item !== id));
+      setActionError(null);
+    },
+    onError: (error) => {
+      console.error("Decline error:", error);
+      setActionError(`Decline failed: ${(error as any)?.response?.data?.error || 'Unknown error'}`);
     }
   });
 
   // Bulk approve mutation
   const bulkApproveMutation = useMutation({
     mutationFn: async (ids: number[]) => {
-      await axios.post(
-        '/api/pending-submissions/bulk/approve',
-        { ids },
-        { withCredentials: true }
-      );
-      return ids;
+      try {
+        const response = await axios.post(
+          '/api/pending-submissions/bulk/approve',
+          { ids },
+          { withCredentials: true }
+        );
+        return { ids, data: response.data };
+      } catch (error) {
+        console.error("Error bulk approving submissions:", error);
+        throw error;
+      }
     },
-    onSuccess: (ids) => {
+    onSuccess: ({ ids }) => {
       queryClient.setQueryData(
         ['pendingSubmissions'],
         (old: PendingSubmission[] | undefined) => 
           old ? old.filter(sub => !ids.includes(sub.id)) : []
       );
       setSelectedItems([]);
+      setActionError(null);
+    },
+    onError: (error) => {
+      console.error("Bulk approve error:", error);
+      setActionError(`Bulk approve failed: ${(error as any)?.response?.data?.error || 'Unknown error'}`);
     }
   });
 
   // Bulk decline mutation
   const bulkDeclineMutation = useMutation({
     mutationFn: async ({ ids, notes }: { ids: number[]; notes: string }) => {
-      await axios.post(
-        '/api/pending-submissions/bulk/decline',
-        { ids, notes },
-        { withCredentials: true }
-      );
-      return ids;
+      try {
+        const response = await axios.post(
+          '/api/pending-submissions/bulk/decline',
+          { ids, notes },
+          { withCredentials: true }
+        );
+        return { ids, data: response.data };
+      } catch (error) {
+        console.error("Error bulk declining submissions:", error);
+        throw error;
+      }
     },
-    onSuccess: (ids) => {
+    onSuccess: ({ ids }) => {
       queryClient.setQueryData(
         ['pendingSubmissions'],
         (old: PendingSubmission[] | undefined) => 
@@ -118,6 +159,11 @@ function PendingApprovals() {
       );
       setSelectedItems([]);
       setAdminNotes('');
+      setActionError(null);
+    },
+    onError: (error) => {
+      console.error("Bulk decline error:", error);
+      setActionError(`Bulk decline failed: ${(error as any)?.response?.data?.error || 'Unknown error'}`);
     }
   });
 
@@ -139,23 +185,38 @@ function PendingApprovals() {
   };
 
   const handleApprove = async (id: number) => {
+    setActionError(null);
     await approveMutation.mutateAsync(id);
   };
 
   const handleDecline = async (id: number) => {
+    setActionError(null);
     if (!adminNotes.trim()) {
+      setActionError("Admin notes are required for declining submissions");
       return;
     }
     await declineMutation.mutateAsync({ id, notes: adminNotes });
   };
 
   const handleBulkApprove = async () => {
-    if (selectedItems.length === 0) return;
+    setActionError(null);
+    if (selectedItems.length === 0) {
+      setActionError("No items selected");
+      return;
+    }
     await bulkApproveMutation.mutateAsync(selectedItems);
   };
 
   const handleBulkDecline = async () => {
-    if (selectedItems.length === 0 || !adminNotes.trim()) return;
+    setActionError(null);
+    if (selectedItems.length === 0) {
+      setActionError("No items selected");
+      return;
+    }
+    if (!adminNotes.trim()) {
+      setActionError("Admin notes are required for declining submissions");
+      return;
+    }
     await bulkDeclineMutation.mutateAsync({ ids: selectedItems, notes: adminNotes });
   };
 
@@ -187,6 +248,12 @@ function PendingApprovals() {
       {isError && (
         <div className="mb-4 p-4 rounded-md bg-red-100 text-red-800 border border-red-300">
           {(error as Error)?.message || 'Failed to fetch pending items'}
+        </div>
+      )}
+
+      {actionError && (
+        <div className="mb-4 p-4 rounded-md bg-red-100 text-red-800 border border-red-300">
+          {actionError}
         </div>
       )}
 
@@ -227,7 +294,7 @@ function PendingApprovals() {
               </button>
               <button
                 onClick={handleBulkDecline}
-                disabled={isProcessing || selectedItems.length === 0}
+                disabled={isProcessing || selectedItems.length === 0 || !adminNotes.trim()}
                 className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-sm"
               >
                 {bulkDeclineMutation.isPending ? 'Processing...' : `Decline Selected (${selectedItems.length})`}
@@ -244,8 +311,10 @@ function PendingApprovals() {
             submission={submission}
             selected={selectedItems.includes(submission.id)}
             processing={
-              approveMutation.isPending || 
-              declineMutation.isPending
+              approveMutation.isPending && approveMutation.variables === submission.id || 
+              declineMutation.isPending && declineMutation.variables?.id === submission.id ||
+              bulkApproveMutation.isPending && selectedItems.includes(submission.id) ||
+              bulkDeclineMutation.isPending && selectedItems.includes(submission.id)
             }
             onSelect={() => handleSelect(submission.id)}
             onApprove={() => handleApprove(submission.id)}

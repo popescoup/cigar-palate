@@ -2,9 +2,6 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
-const fsPromises = require('fs').promises;
 const { auth } = require('../middleware/auth');
 const { isAdmin } = require('../middleware/isAdmin');
 const PendingSubmission = require('../models/pendingSubmission');
@@ -12,127 +9,11 @@ const Brand = require('../models/brand');
 const User = require('../models/user');
 const sequelize = require('../config');
 const emailService = require('../services/email');
-const { upload, processAndSaveImage } = require('../config/multerConfig');
-
-// Ensure uploads directory exists with proper permissions
-const uploadsDir = path.join(process.cwd(), 'uploads');
-if (!fs.existsSync(uploadsDir)) {
-    try {
-        fs.mkdirSync(uploadsDir, { recursive: true, mode: 0o755 });
-        console.log('Created uploads directory:', uploadsDir);
-    } catch (err) {
-        console.error('Error creating uploads directory:', err);
-        throw new Error('Failed to create uploads directory');
-    }
-}
-
-// Log directory permissions
-try {
-    const stats = fs.statSync(uploadsDir);
-    console.log('Uploads directory status:', {
-        path: uploadsDir,
-        mode: stats.mode.toString(8),
-        exists: true,
-        isDirectory: stats.isDirectory(),
-        permissions: {
-            read: (stats.mode & fs.constants.R_OK) !== 0,
-            write: (stats.mode & fs.constants.W_OK) !== 0,
-            execute: (stats.mode & fs.constants.X_OK) !== 0
-        }
-    });
-} catch (err) {
-    console.error('Error checking uploads directory:', err);
-}
-
-// New uploadMiddleware
-const uploadMiddleware = (req, res, next) => {
-    upload.fields([
-        { name: 'image', maxCount: 1 },
-        { name: 'brand_image', maxCount: 1 }
-    ])(req, res, async function(err) {
-        if (err) {
-            console.error('Multer upload error:', err);
-            return res.status(400).json({
-                error: 'File upload failed',
-                details: err.message
-            });
-        }
-        
-        try {
-            // Add logging for cigar image
-            if (req.files['image']) {
-                const cigarImage = req.files['image'][0];
-                // Log original file details
-                console.log('Original cigar image details:', {
-                    filename: cigarImage.originalname,
-                    size: (cigarImage.size / 1024).toFixed(2) + ' KB',
-                    mimetype: cigarImage.mimetype
-                });
-
-                const cigarImageResult = await processAndSaveImage(
-                    cigarImage,
-                    uploadsDir,
-                    `image-${Date.now()}-${Math.round(Math.random() * 1E9)}${path.extname(cigarImage.originalname)}`
-                );
-
-                // Log processed result
-                console.log('Processed cigar image details:', {
-                    path: cigarImageResult.path,
-                    dimensions: {
-                        width: cigarImageResult.dimensions?.width,
-                        height: cigarImageResult.dimensions?.height
-                    },
-                    size: cigarImageResult.size ? (cigarImageResult.size / 1024).toFixed(2) + ' KB' : 'unknown'
-                });
-
-                req.processedImages = {
-                    cigar: cigarImageResult
-                };
-            }
-
-            // Similar logging for brand image
-            if (req.files['brand_image']) {
-                const brandImage = req.files['brand_image'][0];
-                console.log('Original brand image details:', {
-                    filename: brandImage.originalname,
-                    size: (brandImage.size / 1024).toFixed(2) + ' KB',
-                    mimetype: brandImage.mimetype
-                });
-
-                const brandImageResult = await processAndSaveImage(
-                    brandImage,
-                    uploadsDir,
-                    `image-${Date.now()}-${Math.round(Math.random() * 1E9)}${path.extname(brandImage.originalname)}`
-                );
-
-                console.log('Processed brand image details:', {
-                    path: brandImageResult.path,
-                    dimensions: {
-                        width: brandImageResult.dimensions?.width,
-                        height: brandImageResult.dimensions?.height
-                    },
-                    size: brandImageResult.size ? (brandImageResult.size / 1024).toFixed(2) + ' KB' : 'unknown'
-                });
-
-                req.processedImages = {
-                    ...req.processedImages,
-                    brand: brandImageResult
-                };
-            }
-
-            next();
-        } catch (error) {
-            console.error('Image processing error:', error);
-            return res.status(400).json({
-                error: 'Image processing failed',
-                details: error.message
-            });
-        }
-    });
-};
+const spacesUploadMiddleware = require('../middleware/spacesUploadMiddleware');
+const { deleteImage } = require('../utils/spaces-config');
 
 // Submit new pending submission
-router.post('/pending-submissions', [auth, uploadMiddleware], async (req, res) => {
+router.post('/pending-submissions', [auth, spacesUploadMiddleware], async (req, res) => {
     // Add detailed logging of incoming request
     console.log('Received form data:', {
         fullBody: req.body,
@@ -145,9 +26,7 @@ router.post('/pending-submissions', [auth, uploadMiddleware], async (req, res) =
     console.log('File upload details:', {
         files: req.files,
         cigarImage: req.files['image']?.[0],
-        brandImage: req.files['brand_image']?.[0],
-        uploadDir: uploadsDir,
-        dirExists: fs.existsSync(uploadsDir)
+        brandImage: req.files['brand_image']?.[0]
     });
 
     try {
@@ -195,20 +74,14 @@ router.post('/pending-submissions', [auth, uploadMiddleware], async (req, res) =
             });
         }
 
-        // Get processed image paths
-        const cigarImagePath = req.processedImages?.cigar?.path;
-        const brandImagePath = req.processedImages?.brand?.path;
-
-        // Verify cigar image was processed
-        console.log('Checking processed cigar image:', {
-            path: cigarImagePath,
-            exists: fs.existsSync(path.join(uploadsDir, cigarImagePath))
-        });
+        // Get image keys
+        const cigarImageKey = req.processedImages?.cigar?.key;
+        const brandImageKey = req.processedImages?.brand?.key;
 
         // Validate brand image if submitting new brand
         if (req.body.new_brand_name && !req.processedImages?.brand) {
             if (req.processedImages?.cigar) {
-                await fsPromises.unlink(path.join(uploadsDir, req.processedImages.cigar.path));
+                await deleteImage(cigarImageKey);
             }
             return res.status(400).json({
                 error: 'Missing brand image',
@@ -230,29 +103,29 @@ router.post('/pending-submissions', [auth, uploadMiddleware], async (req, res) =
         // Construct submission data
         const submissionData = {
             cigar_name: req.body.name,
-            image_path: req.processedImages?.cigar?.path ? path.join('uploads', req.processedImages.cigar.path) : null,
+            image_key: cigarImageKey,
             brand_id: req.body.brand_id || null,
             new_brand_name: req.body.new_brand_name || null,
             new_brand_description: req.body.new_brand_description,
-            new_brand_image_path: req.processedImages?.brand?.path ? path.join('uploads', req.processedImages.brand.path) : null,
+            new_brand_image_key: brandImageKey,
             flavors: req.body.flavors,
             description: req.body.description,
             submitter_id: req.user.userId,
         };
 
-// Add optional characteristics
-if (req.body.shape) submissionData.shape = req.body.shape;
-if (req.body.size) submissionData.size = req.body.size;
-if (req.body.color) submissionData.color = req.body.color;
-if (req.body.wrap_type) submissionData.wrap_type = req.body.wrap_type;
-if (req.body.filler) submissionData.filler = req.body.filler;
-if (req.body.country_of_origin) submissionData.country_of_origin = req.body.country_of_origin;
-if (req.body.aging) submissionData.aging = parseInt(req.body.aging, 10);
-if (req.body.dimensions) submissionData.dimensions = req.body.dimensions;
-if (req.body.made_by) submissionData.made_by = req.body.made_by;
-if (req.body.handmade === 'true' || req.body.handmade === 'false') {
-    submissionData.handmade = req.body.handmade === 'true';
-}
+        // Add optional characteristics
+        if (req.body.shape) submissionData.shape = req.body.shape;
+        if (req.body.size) submissionData.size = req.body.size;
+        if (req.body.color) submissionData.color = req.body.color;
+        if (req.body.wrap_type) submissionData.wrap_type = req.body.wrap_type;
+        if (req.body.filler) submissionData.filler = req.body.filler;
+        if (req.body.country_of_origin) submissionData.country_of_origin = req.body.country_of_origin;
+        if (req.body.aging) submissionData.aging = parseInt(req.body.aging, 10);
+        if (req.body.dimensions) submissionData.dimensions = req.body.dimensions;
+        if (req.body.made_by) submissionData.made_by = req.body.made_by;
+        if (req.body.handmade === 'true' || req.body.handmade === 'false') {
+            submissionData.handmade = req.body.handmade === 'true';
+        }
 
         // Add new fields
         if (req.body.price_range) submissionData.price_range = req.body.price_range;
@@ -265,8 +138,8 @@ if (req.body.handmade === 'true' || req.body.handmade === 'false') {
 
         console.log('Submission created successfully:', {
             id: submission.id,
-            cigarPath: submission.image_path,
-            brandPath: submission.new_brand_image_path,
+            cigarKey: submission.image_key,
+            brandKey: submission.new_brand_image_key,
             price_range: submission.price_range,
             strength: submission.strength,
             binder: submission.binder
@@ -280,7 +153,7 @@ if (req.body.handmade === 'true' || req.body.handmade === 'false') {
         // Clean up processed images if submission fails
         if (req.processedImages?.cigar) {
             try {
-                await fsPromises.unlink(path.join(uploadsDir, req.processedImages.cigar.path));
+                await deleteImage(req.processedImages.cigar.key);
                 console.log('Cleaned up processed cigar image after failed submission');
             } catch (deleteErr) {
                 console.error('Error deleting processed cigar image:', deleteErr);
@@ -288,7 +161,7 @@ if (req.body.handmade === 'true' || req.body.handmade === 'false') {
         }
         if (req.processedImages?.brand) {
             try {
-                await fsPromises.unlink(path.join(uploadsDir, req.processedImages.brand.path));
+                await deleteImage(req.processedImages.brand.key);
                 console.log('Cleaned up processed brand image after failed submission');
             } catch (deleteErr) {
                 console.error('Error deleting processed brand image:', deleteErr);
@@ -383,7 +256,7 @@ router.get('/pending-submissions/:id', [auth], async (req, res) => {
 });
 
 // Update submission
-router.put('/pending-submissions/:id', [auth, isAdmin, uploadMiddleware], async (req, res) => {
+router.put('/pending-submissions/:id', [auth, isAdmin, spacesUploadMiddleware], async (req, res) => {
     const transaction = await sequelize.transaction();
     try {
         const submission = await PendingSubmission.findByPk(req.params.id);
@@ -420,24 +293,24 @@ router.put('/pending-submissions/:id', [auth, isAdmin, uploadMiddleware], async 
             });
         }
 
-        // Store old image paths in case we need to delete them
-        const oldImagePath = submission.image_path;
-        const oldBrandImagePath = submission.new_brand_image_path;
+        // Store old image keys in case we need to delete them
+        const oldImageKey = submission.image_key;
+        const oldBrandImageKey = submission.new_brand_image_key;
 
-        // Get processed image paths
-        let newCigarPath = null;
-        let newBrandPath = null;
+        // Get new image keys
+        let newCigarKey = null;
+        let newBrandKey = null;
 
         if (req.processedImages?.cigar) {
-            newCigarPath = req.processedImages.cigar.path;
+            newCigarKey = req.processedImages.cigar.key;
         }
 
         if (req.processedImages?.brand) {
-            newBrandPath = req.processedImages.brand.path;
+            newBrandKey = req.processedImages.brand.key;
         }
 
         // Validate brand image if submitting new brand
-        if (req.body.new_brand_name && !req.processedImages?.brand && !submission.new_brand_image_path) {
+        if (req.body.new_brand_name && !req.processedImages?.brand && !submission.new_brand_image_key) {
             return res.status(400).json({
                 error: 'Missing brand image',
                 details: 'Brand image is required when submitting a new brand'
@@ -454,15 +327,14 @@ router.put('/pending-submissions/:id', [auth, isAdmin, uploadMiddleware], async 
             description: req.body.description
         };
 
-        // Update image paths if new files were uploaded
-        if (newCigarPath) {
-            updateData.image_path = path.join('uploads', newCigarPath);
+        // Update image keys if new files were uploaded
+        if (newCigarKey) {
+            updateData.image_key = newCigarKey;
         }
-        if (newBrandPath) {
-            updateData.new_brand_image_path = path.join('uploads', newBrandPath);
+        if (newBrandKey) {
+            updateData.new_brand_image_key = newBrandKey;
         }
 
-        // Add optional fields only if they have values
         // Add optional fields only if they have values
         if (req.body.shape) updateData.shape = req.body.shape;
         if (req.body.size) updateData.size = req.body.size;
@@ -491,30 +363,28 @@ router.put('/pending-submissions/:id', [auth, isAdmin, uploadMiddleware], async 
 
         console.log('Updating submission with data:', {
             id: submission.id,
-            oldCigarPath: oldImagePath,
-            newCigarPath: updateData.image_path,
-            oldBrandPath: oldBrandImagePath,
-            newBrandPath: updateData.new_brand_image_path
+            oldCigarKey: oldImageKey,
+            newCigarKey: updateData.image_key,
+            oldBrandKey: oldBrandImageKey,
+            newBrandKey: updateData.new_brand_image_key
         });
 
         await submission.update(updateData);
 
         // Delete old images if they were replaced
-        if (newCigarPath && oldImagePath) {
+        if (newCigarKey && oldImageKey) {
             try {
-                const fullOldImagePath = path.join(process.cwd(), oldImagePath);
-                await fsPromises.unlink(fullOldImagePath);
-                console.log('Deleted old cigar image:', fullOldImagePath);
+                await deleteImage(oldImageKey);
+                console.log('Deleted old cigar image:', oldImageKey);
             } catch (error) {
                 console.error('Error deleting old cigar image:', error);
             }
         }
 
-        if (newBrandPath && oldBrandImagePath) {
+        if (newBrandKey && oldBrandImageKey) {
             try {
-                const fullOldBrandPath = path.join(process.cwd(), oldBrandImagePath);
-                await fsPromises.unlink(fullOldBrandPath);
-                console.log('Deleted old brand image:', fullOldBrandPath);
+                await deleteImage(oldBrandImageKey);
+                console.log('Deleted old brand image:', oldBrandImageKey);
             } catch (error) {
                 console.error('Error deleting old brand image:', error);
             }
@@ -538,17 +408,18 @@ router.put('/pending-submissions/:id', [auth, isAdmin, uploadMiddleware], async 
 
         console.log('Successfully updated submission:', {
             id: updatedSubmission.id,
-            cigarPath: updatedSubmission.image_path,
-            brandPath: updatedSubmission.new_brand_image_path
+            cigarKey: updatedSubmission.image_key,
+            brandKey: updatedSubmission.new_brand_image_key
         });
         
         res.json(updatedSubmission);
     } catch (err) {
         await transaction.rollback();
+        
         // Clean up any newly processed images if update fails
         if (req.processedImages?.cigar) {
             try {
-                await fsPromises.unlink(path.join(uploadsDir, req.processedImages.cigar.path));
+                await deleteImage(req.processedImages.cigar.key);
                 console.log('Cleaned up new processed cigar image after failed update');
             } catch (deleteErr) {
                 console.error('Error deleting new processed cigar image:', deleteErr);
@@ -556,7 +427,7 @@ router.put('/pending-submissions/:id', [auth, isAdmin, uploadMiddleware], async 
         }
         if (req.processedImages?.brand) {
             try {
-                await fsPromises.unlink(path.join(uploadsDir, req.processedImages.brand.path));
+                await deleteImage(req.processedImages.brand.key);
                 console.log('Cleaned up new processed brand image after failed update');
             } catch (deleteErr) {
                 console.error('Error deleting new processed brand image:', deleteErr);
@@ -706,16 +577,16 @@ router.post('/pending-submissions/:id/approve', [auth, isAdmin], async (req, res
         }
 
         console.log('Starting approval process for submission:', submission.id);
-        console.log('Original image paths:', {
-            cigar: submission.image_path,
-            brand: submission.new_brand_image_path
+        console.log('Original image keys:', {
+            cigar: submission.image_key,
+            brand: submission.new_brand_image_key
         });
 
         const approvedCigar = await submission.approve(req.user.userId);
         
         console.log('Approval complete, approved cigar:', {
             id: approvedCigar.id,
-            image_path: approvedCigar.image_path
+            image_key: approvedCigar.image_key
         });
 
         // Send approval email with cigar ID
@@ -786,7 +657,8 @@ router.post('/pending-submissions/:id/decline', [auth, isAdmin], async (req, res
     }
 });
 
-router.post('/test-upload', uploadMiddleware, (req, res) => {
+// Test upload route
+router.post('/test-upload', spacesUploadMiddleware, (req, res) => {
     console.log('Test upload received:', {
         files: req.files,
         body: req.body
@@ -804,7 +676,7 @@ router.use((err, req, res, next) => {
         if (err.code === 'LIMIT_FILE_SIZE') {
             return res.status(400).json({
                 error: 'File too large',
-                details: 'Maximum file size is 2MB'
+                details: 'Maximum file size is 3.5MB'
             });
         }
         return res.status(400).json({

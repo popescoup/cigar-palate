@@ -21,7 +21,7 @@ interface Cigar {
   numberOfRatings: number;
   totalRecentInteractions?: number;
   similarityScore?: number;
-  image_path?: string;
+  image_key?: string;
   flavors?: string;
   price_range?: string;
   brand?: {
@@ -35,7 +35,7 @@ interface Brand {
   avgRating: number | null;
   cigarCount: number;
   totalRecentInteractions?: number;
-  image_path?: string;
+  image_key?: string;
 }
 
 interface PaginatedData<T> {

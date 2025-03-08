@@ -45,3 +45,7 @@ yarn-error.log*
 # Backend specific
 /backend/tmp/
 /backend/search/meilisearch
+/backend/search/data.ms/
+/backend/search/data.ms/**
+/backend/uploads/
+/backend/uploads/*

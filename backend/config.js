@@ -56,95 +56,150 @@ async function connectWithRetry(retries = 5, initialDelay = 3000) {
     }
 }
 
-// Redis Client Class (your existing implementation)
+// Modified RedisClient Class
 class RedisClient {
     constructor() {
         this.client = null;
         this.isConnected = false;
         this.maxRetryAttempts = 5;
+        this.enabled = !!process.env.REDIS_HOST; // Check if Redis is configured
     }
 
     async connect() {
+        if (!this.enabled) {
+            return null;
+        }
+        
         if (this.client) return this.client;
 
-        this.client = new Redis({
-            host: process.env.REDIS_HOST || 'localhost',
-            port: process.env.REDIS_PORT || 6379,
-            retryStrategy: (times) => {
-                if (times > this.maxRetryAttempts) {
-                    console.error('Max Redis retry attempts reached');
-                    return null;
-                }
-                const delay = Math.min(times * 100, 3000);
-                return delay;
-            },
-            maxRetriesPerRequest: 3
-        });
-
-        this.client.on('connect', () => {
-            console.log('Redis client connected');
-            this.isConnected = true;
-        });
-
-        this.client.on('error', (err) => {
-            console.error('Redis client error:', err);
-            this.isConnected = false;
-        });
-
         try {
+            this.client = new Redis({
+                host: process.env.REDIS_HOST || 'localhost',
+                port: process.env.REDIS_PORT || 6379,
+                retryStrategy: (times) => {
+                    if (times > this.maxRetryAttempts) {
+                        console.error('Max Redis retry attempts reached');
+                        return null;
+                    }
+                    const delay = Math.min(times * 100, 3000);
+                    return delay;
+                },
+                maxRetriesPerRequest: 3
+            });
+
+            this.client.on('connect', () => {
+                console.log('Redis client connected');
+                this.isConnected = true;
+            });
+
+            this.client.on('error', (err) => {
+                console.error('Redis client error:', err);
+                this.isConnected = false;
+            });
+
             await this.client.ping();
             return this.client;
         } catch (error) {
             console.error('Redis connection error:', error);
-            throw error;
+            this.enabled = false;
+            return null;
         }
     }
 
     async set(key, value, expireTime = 3600) {
-        if (!this.client) await this.connect();
-        if (typeof value === 'object') value = JSON.stringify(value);
-        await this.client.set(key, value, 'EX', expireTime);
+        if (!this.enabled) return;
+        
+        try {
+            if (!this.client) await this.connect();
+            if (!this.client) return;
+            
+            if (typeof value === 'object') value = JSON.stringify(value);
+            await this.client.set(key, value, 'EX', expireTime);
+        } catch (error) {
+            console.error(`Redis set error for key ${key}:`, error);
+        }
     }
 
     async get(key) {
-        if (!this.client) await this.connect();
-        const value = await this.client.get(key);
-        if (!value) return null;
+        if (!this.enabled) return null;
+        
         try {
-            return JSON.parse(value);
-        } catch {
-            return value;
+            if (!this.client) await this.connect();
+            if (!this.client) return null;
+            
+            const value = await this.client.get(key);
+            if (!value) return null;
+            
+            try {
+                return JSON.parse(value);
+            } catch {
+                return value;
+            }
+        } catch (error) {
+            console.error(`Redis get error for key ${key}:`, error);
+            return null;
         }
     }
 
     async delete(key) {
-        if (!this.client) await this.connect();
-        await this.client.del(key);
+        if (!this.enabled) return;
+        
+        try {
+            if (!this.client) await this.connect();
+            if (!this.client) return;
+            
+            await this.client.del(key);
+        } catch (error) {
+            console.error(`Redis delete error for key ${key}:`, error);
+        }
     }
 
     async setHash(key, field, value, expireTime = 3600) {
-        if (!this.client) await this.connect();
-        if (typeof value === 'object') value = JSON.stringify(value);
-        await this.client.hset(key, field, value);
-        await this.client.expire(key, expireTime);
+        if (!this.enabled) return;
+        
+        try {
+            if (!this.client) await this.connect();
+            if (!this.client) return;
+            
+            if (typeof value === 'object') value = JSON.stringify(value);
+            await this.client.hset(key, field, value);
+            await this.client.expire(key, expireTime);
+        } catch (error) {
+            console.error(`Redis setHash error for key ${key}:`, error);
+        }
     }
 
     async getHash(key, field) {
-        if (!this.client) await this.connect();
-        const value = await this.client.hget(key, field);
-        if (!value) return null;
+        if (!this.enabled) return null;
+        
         try {
-            return JSON.parse(value);
-        } catch {
-            return value;
+            if (!this.client) await this.connect();
+            if (!this.client) return null;
+            
+            const value = await this.client.hget(key, field);
+            if (!value) return null;
+            
+            try {
+                return JSON.parse(value);
+            } catch {
+                return value;
+            }
+        } catch (error) {
+            console.error(`Redis getHash error for key ${key}:`, error);
+            return null;
         }
     }
 
     async quit() {
         if (this.client) {
-            await this.client.quit();
-            this.client = null;
-            this.isConnected = false;
+            try {
+                await this.client.quit();
+            } catch (error) {
+                console.error('Redis quit error:', error);
+            } finally {
+                this.client = null;
+                this.isConnected = false;
+            }
         }
     }
 }

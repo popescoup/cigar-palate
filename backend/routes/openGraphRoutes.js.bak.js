@@ -32,9 +32,9 @@ router.get('/cigars/:id/og-image', async (req, res) => {
         ctx.fillRect(0, 0, 1200, 630);
 
         // Load and draw cigar image
-        if (cigar.image_path) {
+        if (cigar.image_key) {
             try {
-                const imagePath = path.join(process.cwd(), cigar.image_path);
+                const imagePath = path.join(process.cwd(), cigar.image_key);
                 const image = await loadImage(imagePath);
                 
                 // Calculate dimensions to center the image

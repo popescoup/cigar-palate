@@ -10,6 +10,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Brand as BaseBrand } from '../types';
+import { getImageUrl } from '@/utils/imageUtils';
 
 interface CardBadgeProps {
   icon?: LucideIcon;
@@ -63,6 +64,8 @@ const CardBadge: React.FC<CardBadgeProps> = ({
 interface BrandCardData extends BaseBrand {
   averageRating?: number;
   cigarCount?: number;
+  image_key?: string;
+  image_url?: string;
 }
 
 interface BrandCardProps {
@@ -70,6 +73,9 @@ interface BrandCardProps {
 }
 
 const BrandCard: React.FC<BrandCardProps> = ({ brand }) => {
+  // Get the image source from either image_url or by generating it from image_key
+  const imageSrc = brand.image_url || (brand.image_key ? getImageUrl(brand.image_key) : null);
+
   return (
     <Link href={`/brands/${brand.id}`} className="block h-full">
       <Card className="h-full transition-all duration-300 hover:shadow-lg">
@@ -77,9 +83,9 @@ const BrandCard: React.FC<BrandCardProps> = ({ brand }) => {
           <div className="relative">
             {/* Image Section */}
             <div className="relative h-40 sm:h-48">
-              {brand.image_path ? (
+              {imageSrc ? (
                 <Image
-                  src={`${process.env.NEXT_PUBLIC_BACKEND_URL}/${brand.image_path}`}
+                  src={imageSrc}
                   alt={brand.name}
                   fill
                   className="object-cover rounded-t"
