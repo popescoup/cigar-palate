@@ -6,30 +6,33 @@ const Redis = require('ioredis');
 // Initialize Sequelize using environment variables
 const sequelize = new Sequelize(process.env.DB_NAME, process.env.DB_USER, process.env.DB_PASSWORD, {
     host: process.env.DB_HOST,
-    port: process.env.DB_PORT,  // Make sure this is included
+    port: process.env.DB_PORT,
     dialect: process.env.DB_DIALECT,
     pool: {
-        max: 5,                      // Maximum number of connection in pool
-        min: 0,                      // Minimum number of connection in pool
-        acquire: 30000,              // Maximum time (ms) that pool will try to get connection before throwing error
-        idle: 10000                  // Maximum time (ms) that a connection can be idle before being released
+        max: 5,
+        min: 0,
+        acquire: 30000,
+        idle: 10000
     },
     dialectOptions: {
-        statement_timeout: 10000,    // Timeout for queries (10 seconds)
-        idle_in_transaction_session_timeout: 10000, // Timeout for idle transactions
-        ssl: {
-            require: true,
-            rejectUnauthorized: false // Important for self-signed certificates on DigitalOcean
-        }
+        statement_timeout: 10000,
+        idle_in_transaction_session_timeout: 10000,
+        // Only add SSL configuration in production
+        ...(process.env.NODE_ENV === 'production' || process.env.DB_SSL === 'true' ? {
+            ssl: {
+                require: true,
+                rejectUnauthorized: false
+            }
+        } : {})
     },
     retry: {
-        max: 5,                      // Maximum number of connection retries
-        backoffBase: 3000,           // Start with a 3 second backoff
-        backoffExponent: 1.1         // Increase backoff time slightly with each retry
+        max: 5,
+        backoffBase: 3000,
+        backoffExponent: 1.1
     },
     logging: process.env.NODE_ENV === 'development' ? 
         (msg) => console.log(`[Sequelize] ${msg}`) : 
-        console.log // Enable logging in production to debug connection issues
+        console.log
 });
 
 // Enhanced connection retry function
