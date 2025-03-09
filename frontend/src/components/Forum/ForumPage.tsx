@@ -8,6 +8,7 @@ import CreateThreadModal from './CreateThreadModal';
 import ThreadsList from './ThreadsList';
 import SortControl, { SortOption } from './SortControl';
 import { useInView } from 'react-intersection-observer';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
 
 interface ThreadsResponse {
   threads: Thread[];
@@ -35,6 +36,7 @@ const ForumPage: React.FC = () => {
   const [sortOption, setSortOption] = React.useState<SortOption>('trending');
   const { ref, inView } = useInView();
   const queryClient = useQueryClient();
+  const { currentUser } = useCurrentUser();
 
   const {
     data,
@@ -116,12 +118,23 @@ const ForumPage: React.FC = () => {
       <SortControl currentSort={sortOption} onSortChange={setSortOption} />
     </div>
   </div>
-  <button
-    onClick={() => setIsCreateModalOpen(true)}
-    className="w-full sm:w-auto px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 text-center"
-  >
-    Create New Thread
-  </button>
+  <div className="relative group">
+    <button
+      onClick={() => currentUser && setIsCreateModalOpen(true)}
+      className={`w-full sm:w-auto px-4 py-2 rounded-md text-center ${
+        currentUser 
+          ? "bg-blue-600 text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500" 
+          : "bg-gray-400 text-gray-200 cursor-not-allowed"
+      }`}
+    >
+      Create New Thread
+    </button>
+    {!currentUser && (
+      <div className="absolute left-0 -bottom-10 w-40 invisible group-hover:visible bg-gray-800 text-white text-xs rounded p-2 transition-opacity duration-300">
+        Please log in to create a thread
+      </div>
+    )}
+  </div>
 </div>
 
       {status === 'error' && (
