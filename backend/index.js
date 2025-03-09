@@ -324,26 +324,60 @@ async function gracefulShutdown(signal) {
 // Initialize server and database
 async function startServer() {
     try {
-        // Sync database
-        await sequelize.sync();
-        console.log('Database synced successfully');
+        console.log('Starting server initialization...');
         
-        // Start the token cleanup job
-        const { scheduleTokenCleanup } = require('./jobs/tokenCleanup');
-        scheduleTokenCleanup();
-        console.log('Token cleanup job scheduled');
+        // Log database configuration (without exposing sensitive info)
+        console.log('Database config:', {
+            host: process.env.DB_HOST,
+            port: process.env.DB_PORT,
+            database: process.env.DB_NAME,
+            user: process.env.DB_USER ? 'provided' : 'missing',
+            dialect: process.env.DB_DIALECT || 'postgres',
+            ssl: process.env.DB_SSL || 'not specified'
+        });
+        
+        // Test database authentication
+        try {
+            console.log('Attempting to authenticate with database...');
+            await sequelize.authenticate();
+            console.log('Database authentication successful!');
+        } catch (dbErr) {
+            console.error('Database authentication failed:', dbErr);
+            // Continue startup despite DB issues for debugging
+        }
+        
+        // Try database sync
+        try {
+            console.log('Attempting to sync database...');
+            await sequelize.sync();
+            console.log('Database sync successful!');
+        } catch (syncErr) {
+            console.error('Database sync failed:', syncErr);
+            // Continue startup despite DB sync issues for debugging
+        }
+        
+        // Schedule jobs (with error handling)
+        try {
+            // Start the token cleanup job
+            const { scheduleTokenCleanup } = require('./jobs/tokenCleanup');
+            scheduleTokenCleanup();
+            console.log('Token cleanup job scheduled');
 
-        // Start the notification reminder job
-        const { scheduleNotificationReminders } = require('./jobs/notificationReminder');
-        scheduleNotificationReminders();
-        console.log('Notification reminder job scheduled');  
+            // Start the notification reminder job
+            const { scheduleNotificationReminders } = require('./jobs/notificationReminder');
+            scheduleNotificationReminders();
+            console.log('Notification reminder job scheduled');  
 
-        // Initialize reindexing scheduler
-        const { scheduleReindexing } = require('./jobs/indexScheduler');
-        scheduleReindexing();
-        console.log('Reindexing scheduler initialized');
+            // Initialize reindexing scheduler
+            const { scheduleReindexing } = require('./jobs/indexScheduler');
+            scheduleReindexing();
+            console.log('Reindexing scheduler initialized');
+        } catch (jobErr) {
+            console.error('Error scheduling jobs:', jobErr);
+            // Continue startup despite job scheduling issues
+        }
 
-        // Start HTTP server
+        // Start HTTP server regardless of previous steps
         server = app.listen(PORT, '0.0.0.0', () => {
             console.log(`Server is running on http://0.0.0.0:${PORT}`);
             console.log('Environment:', process.env.NODE_ENV || 'development');
@@ -366,8 +400,9 @@ async function startServer() {
         });
 
     } catch (err) {
-        console.error('Failed to start server:', err);
-        process.exit(1);
+        console.error('Fatal error during server startup:', err);
+        // Don't exit immediately to allow logs to be captured
+        setTimeout(() => process.exit(1), 5000);
     }
 }
 
