@@ -18,11 +18,19 @@ const VerifyEmail = () => {
     const verifyEmail = async () => {
       try {
         const token = searchParams.get('token');
+        
+        // Add these debug logs
+        console.log('Token from URL:', token);
+        console.log('Token length:', token ? token.length : 0);
+        
         if (!token) {
           setStatus('error');
           setMessage('Verification token is missing');
           return;
         }
+  
+        // Log the request payload
+        console.log('Sending verification request with token:', token);
 
         const response = await axios.post('/api/auth/verify-email', { token });
         setStatus('success');

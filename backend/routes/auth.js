@@ -166,16 +166,30 @@ router.post('/verify-email',
   verificationLimiter,
   async (req, res, next) => {
     try {
+      // Add these debug logs
+      console.log('Verification request received');
+      console.log('Request body:', req.body);
+      console.log('Token from request:', req.body.token);
+      console.log('Token type:', typeof req.body.token);
+      console.log('Token length:', req.body.token ? req.body.token.length : 0);
+      
       const { token } = req.body;
       if (!token) {
+        console.log('Token is missing or undefined');
         throw new AppError('Verification token is required', 400);
       }
 
+      // Log the token before hashing
+      console.log('Token before hashing:', token);
+      
       const hashedToken = crypto
         .createHash('sha256')
         .update(token)
         .digest('hex');
-
+      
+      // Log the hashed token
+      console.log('Hashed token:', hashedToken);
+      
       const user = await User.findOne({
         where: {
           verificationToken: hashedToken,
@@ -185,6 +199,9 @@ router.post('/verify-email',
           isVerified: false
         }
       });
+
+      // Log user lookup result
+      console.log('User found?', !!user);
 
       if (!user) {
         throw new AppError('Invalid or expired verification token', 400);
