@@ -55,6 +55,8 @@ const statsRoutes = require('./routes/statsRoutes');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+app.set('trust proxy', true);
+
 // Enable CORS for requests from frontend
 app.use(cors({
     origin: [
