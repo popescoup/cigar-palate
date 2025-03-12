@@ -169,7 +169,7 @@ const [searchError, setSearchError] = useState<string | null>(null);
                   <p className="text-2xl sm:text-3xl font-light tracking-tight text-gray-900">
                     {formatNumber(stats.totalCigars)}
                   </p>
-                  <p className="text-xs sm:text-sm leading-6 text-gray-600">Premium Cigars</p>
+                  <p className="text-xs sm:text-sm leading-6 text-gray-600">Cigars</p>
                 </div>
                 <div className="mx-auto">
                   <p className="text-2xl sm:text-3xl font-light tracking-tight text-gray-900">
