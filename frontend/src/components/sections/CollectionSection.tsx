@@ -142,7 +142,7 @@ const CollectionSection = ({ initialData }: CollectionSectionProps) => {
              title="Top Rated Cigars"
              items={transformCigarData(topRatedCigars?.slice(0, 10) || [])}
              viewAllHref="/discover?tab=top-rated-cigars"
-             viewAllText="View All Top Rated"
+             viewAllText="View All Top Rated Cigars"
              variant="cigar"
            />
          </Suspense>
@@ -164,7 +164,7 @@ const CollectionSection = ({ initialData }: CollectionSectionProps) => {
              title="Trending Cigars"
              items={transformCigarData(trendingCigars?.slice(0, 10) || [])}
              viewAllHref="/discover?tab=trending-cigars"
-             viewAllText="View All Trending"
+             viewAllText="View All Trending Cigars"
              variant="cigar"
            />
          </Suspense>
