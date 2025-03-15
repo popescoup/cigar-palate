@@ -12,15 +12,19 @@ import { Loader2, CheckCircle2, XCircle } from 'lucide-react';
 const VerifyEmail = () => {
   const [status, setStatus] = useState<'verifying' | 'success' | 'error'>('verifying');
   const [message, setMessage] = useState('');
-  const [attempts, setAttempts] = useState(0);
   const [debugInfo, setDebugInfo] = useState<string[]>([]);
   const searchParams = useSearchParams();
   
   useEffect(() => {
     const verifyEmail = async () => {
+      // Initialize logs array
+      const logs = [];
+      
       try {
-        // Initialize logs array once
-        const logs = [];
+        // Get token from URL
+        const rawToken = searchParams.get('token');
+        logs.push(`Raw token from URL: ${rawToken}`);
+        logs.push(`Token length: ${rawToken ? rawToken.length : 0}`);
         
         // Add domain/protocol logging
         logs.push(`Current URL: ${window.location.href}`);
@@ -38,12 +42,6 @@ const VerifyEmail = () => {
         // Check for cookie issues
         logs.push(`Has cookies: ${document.cookie.length > 0 ? 'Yes' : 'No'}`);
           
-        const rawToken = searchParams.get('token');
-        
-        // Continue with token logging (using the same logs array)
-        logs.push(`Raw token from URL: ${rawToken}`);
-        logs.push(`Token length: ${rawToken ? rawToken.length : 0}`);
-        
         // Check for URL encoding issues
         let token = rawToken;
         try {
@@ -60,20 +58,25 @@ const VerifyEmail = () => {
           logs.push(`Error decoding token: ${e instanceof Error ? e.message : String(e)}`);
         }
         
+        // Update debug info state
         setDebugInfo(logs);
+        console.log('Debug info:', logs.join('\n'));
         
         if (!token) {
           setStatus('error');
           setMessage('Verification token is missing');
           return;
         }
-  
-        logs.push(`Attempt ${attempts+1}: Sending verification request...`);
-        console.log(logs.join('\n'));
+
+        logs.push('Sending verification request...');
         
-        // Try with max 3 attempts
-        setAttempts(prev => prev + 1);
+        // Make the API request
         const response = await axios.post('/api/auth/verify-email', { token });
+        
+        // Update state with success
+        logs.push('Verification request succeeded');
+        logs.push(`Server response: ${JSON.stringify(response.data)}`);
+        setDebugInfo(logs); // Update debug info
         
         setStatus('success');
         setMessage(response.data.message);
@@ -83,20 +86,19 @@ const VerifyEmail = () => {
           window.location.href = '/';
         }, 3000);
       } catch (error: any) {
+        // Handle errors
         const errorMsg = error.response?.data?.message || 'Verification failed';
-        console.error('Verification error:', error);
+        logs.push(`Verification error: ${errorMsg}`);
+        logs.push(`Error details: ${JSON.stringify(error.response?.data || {})}`);
         
-        // Retry logic for up to 3 attempts
-        if (attempts < 2) {
-          console.log(`Retrying verification (attempt ${attempts+1}/3)...`);
-          setDebugInfo(prev => [...prev, `⚠️ Attempt ${attempts+1} failed: ${errorMsg}`]);
-          
-          // Wait longer for each retry
-          setTimeout(() => {
-            verifyEmail();
-          }, 1000 * (attempts + 1));
-          return;
+        if (error.response) {
+          logs.push(`Response status: ${error.response.status}`);
+          logs.push(`Response headers: ${JSON.stringify(error.response.headers)}`);
         }
+        
+        // Update debug info
+        setDebugInfo(logs);
+        console.error('Verification error:', error);
         
         setStatus('error');
         setMessage(errorMsg);
@@ -113,7 +115,7 @@ const VerifyEmail = () => {
           <CardTitle>Email Verification</CardTitle>
           <CardDescription>
             {status === 'verifying' ? 
-              `Verifying your email address${attempts > 0 ? ` (attempt ${attempts+1}/3)` : ''}...` : 
+              'Verifying your email address...' : 
               status === 'success' ? 'Email verified successfully!' :
               'Verification failed'}
           </CardDescription>
