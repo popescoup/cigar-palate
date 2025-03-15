@@ -190,25 +190,6 @@ const emailService = {
     }
 
     const baseUrl = process.env.FRONTEND_URL.trim().replace(/\/$/, '');
-
-    // Add protocol/domain logging
-  try {
-    const urlObj = new URL(baseUrl);
-    console.log('Email verification URL details:', {
-      protocol: urlObj.protocol,
-      hostname: urlObj.hostname,
-      includesWww: urlObj.hostname.startsWith('www.'),
-      port: urlObj.port || 'default'
-    });
-    
-    // Check for HTTP instead of HTTPS
-    if (urlObj.protocol === 'http:') {
-      console.warn('⚠️ WARNING: Using non-secure HTTP URL for verification emails');
-    }
-  } catch (e) {
-    console.error('Invalid FRONTEND_URL format:', baseUrl);
-  }
-  
     const verificationLink = `${baseUrl}/verify-email?token=${verificationToken}`;
 
     try {
