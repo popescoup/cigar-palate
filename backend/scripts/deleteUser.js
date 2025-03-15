@@ -1,7 +1,7 @@
 // scripts/deleteUser.js
 
 // Import required modules
-const User = require('../models/User');  // Adjust the path as needed
+const User = require('../models/user.js');
 
 // Check if an ID was provided as a command line argument
 const userId = process.argv[2];
