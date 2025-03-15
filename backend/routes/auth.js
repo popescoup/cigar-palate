@@ -196,8 +196,51 @@ router.post('/verify-email',
       console.log('Token type:', typeof req.body.token);
       console.log('Token length:', req.body.token ? req.body.token.length : 0);
       
-      // Check for secure connection
-      console.log('Protocol:', req.protocol);
+      // Enhanced connection and domain logging
+      console.log('Connection info:', {
+        protocol: req.protocol,
+        secure: req.secure,
+        hostname: req.hostname,
+        originalUrl: req.originalUrl,
+        'x-forwarded-proto': req.get('x-forwarded-proto'),
+        'x-forwarded-host': req.get('x-forwarded-host'),
+        'x-forwarded-for': req.get('x-forwarded-for')
+      });
+      
+      // Check for domain or protocol mismatches
+      const frontendUrl = process.env.FRONTEND_URL?.trim() || 'Not set';
+      try {
+        const configuredUrl = new URL(frontendUrl);
+        const expectedHost = configuredUrl.host;
+        const actualHost = req.headers.host;
+        const expectedProtocol = configuredUrl.protocol.replace(':', '');
+        const actualProtocol = req.headers['x-forwarded-proto'] || req.protocol;
+        
+        console.log('URL comparison:', {
+          expectedHost,
+          actualHost,
+          expectedProtocol,
+          actualProtocol,
+          hostsMatch: expectedHost === actualHost,
+          protocolsMatch: expectedProtocol === actualProtocol
+        });
+        
+        if (expectedHost !== actualHost) {
+          console.warn(`⚠️ Domain mismatch: Expected ${expectedHost}, got ${actualHost}`);
+        }
+        if (expectedProtocol !== actualProtocol) {
+          console.warn(`⚠️ Protocol mismatch: Expected ${expectedProtocol}, got ${actualProtocol}`);
+        }
+      } catch (e) {
+        console.error('Error comparing URLs:', e);
+      }
+      
+      // Log cookie information to check for cookie domain issues
+      console.log('Cookies received:', Object.keys(req.cookies).length > 0 ? 'Yes' : 'No');
+      if (Object.keys(req.cookies).length > 0) {
+        console.log('Cookie keys:', Object.keys(req.cookies));
+      }
+      
       console.log('Headers:', {
         host: req.headers.host,
         origin: req.headers.origin,
@@ -293,10 +336,21 @@ router.post('/verify-email',
         expiresIn: TOKEN_EXPIRY_NORMAL
       });
 
-      // Set cookie
+      // Set cookie with proper settings based on environment
+      const isProduction = process.env.NODE_ENV === 'production';
+      const secureFlag = isProduction || req.secure || req.headers['x-forwarded-proto'] === 'https';
+      
+      console.log('Setting cookie with options:', {
+        httpOnly: true,
+        secure: secureFlag,
+        sameSite: 'Lax',
+        maxAge: COOKIE_MAX_AGE_NORMAL,
+        domain: undefined
+      });
+      
       res.cookie('token', authToken, {
         httpOnly: true,
-        secure: false, // Consider changing to true for production
+        secure: secureFlag, // Use HTTPS in production or when accessed via HTTPS
         sameSite: 'Lax',
         maxAge: COOKIE_MAX_AGE_NORMAL,
         domain: undefined

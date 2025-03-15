@@ -19,10 +19,28 @@ const VerifyEmail = () => {
   useEffect(() => {
     const verifyEmail = async () => {
       try {
+        // Initialize logs array once
+        const logs = [];
+        
+        // Add domain/protocol logging
+        logs.push(`Current URL: ${window.location.href}`);
+        logs.push(`Origin: ${window.location.origin}`);
+        logs.push(`Protocol: ${window.location.protocol}`);
+        logs.push(`Host: ${window.location.host}`);
+        
+        // Check for mixed content issues
+        if (window.location.protocol === 'https:' && 
+            document.referrer && 
+            document.referrer.startsWith('http:')) {
+          logs.push('⚠️ WARNING: Secure page loaded from insecure referrer');
+        }
+        
+        // Check for cookie issues
+        logs.push(`Has cookies: ${document.cookie.length > 0 ? 'Yes' : 'No'}`);
+          
         const rawToken = searchParams.get('token');
         
-        // Comprehensive debugging
-        const logs = [];
+        // Continue with token logging (using the same logs array)
         logs.push(`Raw token from URL: ${rawToken}`);
         logs.push(`Token length: ${rawToken ? rawToken.length : 0}`);
         
@@ -49,7 +67,7 @@ const VerifyEmail = () => {
           setMessage('Verification token is missing');
           return;
         }
-
+  
         logs.push(`Attempt ${attempts+1}: Sending verification request...`);
         console.log(logs.join('\n'));
         
