@@ -113,7 +113,7 @@ const ForumPage: React.FC = () => {
     <div className="container mx-auto px-4 sm:px-6 py-6 sm:py-8">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 sm:gap-0 mb-6">
   <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4">
-    <h1 className="text-2xl sm:text-3xl font-bold text-white">Cigar Forum</h1>
+    <h1 className="text-2xl sm:text-3xl font-bold text-black">Cigar Forum</h1>
     <div className="w-full sm:w-auto sm:ml-4">
       <SortControl currentSort={sortOption} onSortChange={setSortOption} />
     </div>

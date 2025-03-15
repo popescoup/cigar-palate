@@ -28,7 +28,6 @@ const TermsPage = () => {
                 <li>Maintain and update your information</li>
                 <li>Keep your account credentials secure</li>
                 <li>Accept responsibility for all activities under your account</li>
-                <li>Not create multiple accounts or transfer your account to others</li>
               </ul>
 
               <h2>3. Intellectual Property and Content Usage Restrictions</h2>

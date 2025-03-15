@@ -2,8 +2,8 @@
 import ForgotPassword from '../components/ForgotPassword';
 
 export const metadata = {
-  title: 'Forgot Password - Brotherhood of The Leaf',
-  description: 'Reset your password to regain access to your Brotherhood of The Leaf account.'
+  title: 'Forgot Password - CigarPalate.com',
+  description: 'Reset your password to regain access to your Cigar Palate account.'
 };
 
 const ForgotPasswordPage = () => {
