@@ -12,27 +12,51 @@ import { Loader2, CheckCircle2, XCircle } from 'lucide-react';
 const VerifyEmail = () => {
   const [status, setStatus] = useState<'verifying' | 'success' | 'error'>('verifying');
   const [message, setMessage] = useState('');
+  const [attempts, setAttempts] = useState(0);
+  const [debugInfo, setDebugInfo] = useState<string[]>([]);
   const searchParams = useSearchParams();
   
   useEffect(() => {
     const verifyEmail = async () => {
       try {
-        const token = searchParams.get('token');
+        const rawToken = searchParams.get('token');
         
-        // Add these debug logs
-        console.log('Token from URL:', token);
-        console.log('Token length:', token ? token.length : 0);
+        // Comprehensive debugging
+        const logs = [];
+        logs.push(`Raw token from URL: ${rawToken}`);
+        logs.push(`Token length: ${rawToken ? rawToken.length : 0}`);
+        
+        // Check for URL encoding issues
+        let token = rawToken;
+        try {
+          const decodedToken = decodeURIComponent(rawToken || '');
+          logs.push(`URL-decoded token: ${decodedToken}`);
+          logs.push(`Decoded token length: ${decodedToken.length}`);
+          
+          // If decoding changes the token, there might be encoding issues
+          if (decodedToken !== rawToken) {
+            logs.push('⚠️ Token was URL-encoded - using decoded version');
+            token = decodedToken;
+          }
+        } catch (e) {
+          logs.push(`Error decoding token: ${e instanceof Error ? e.message : String(e)}`);
+        }
+        
+        setDebugInfo(logs);
         
         if (!token) {
           setStatus('error');
           setMessage('Verification token is missing');
           return;
         }
-  
-        // Log the request payload
-        console.log('Sending verification request with token:', token);
 
+        logs.push(`Attempt ${attempts+1}: Sending verification request...`);
+        console.log(logs.join('\n'));
+        
+        // Try with max 3 attempts
+        setAttempts(prev => prev + 1);
         const response = await axios.post('/api/auth/verify-email', { token });
+        
         setStatus('success');
         setMessage(response.data.message);
         
@@ -41,8 +65,23 @@ const VerifyEmail = () => {
           window.location.href = '/';
         }, 3000);
       } catch (error: any) {
+        const errorMsg = error.response?.data?.message || 'Verification failed';
+        console.error('Verification error:', error);
+        
+        // Retry logic for up to 3 attempts
+        if (attempts < 2) {
+          console.log(`Retrying verification (attempt ${attempts+1}/3)...`);
+          setDebugInfo(prev => [...prev, `⚠️ Attempt ${attempts+1} failed: ${errorMsg}`]);
+          
+          // Wait longer for each retry
+          setTimeout(() => {
+            verifyEmail();
+          }, 1000 * (attempts + 1));
+          return;
+        }
+        
         setStatus('error');
-        setMessage(error.response?.data?.message || 'Verification failed');
+        setMessage(errorMsg);
       }
     };
 
@@ -55,9 +94,10 @@ const VerifyEmail = () => {
         <CardHeader>
           <CardTitle>Email Verification</CardTitle>
           <CardDescription>
-            {status === 'verifying' ? 'Verifying your email address...' : 
-             status === 'success' ? 'Email verified successfully!' :
-             'Verification failed'}
+            {status === 'verifying' ? 
+              `Verifying your email address${attempts > 0 ? ` (attempt ${attempts+1}/3)` : ''}...` : 
+              status === 'success' ? 'Email verified successfully!' :
+              'Verification failed'}
           </CardDescription>
         </CardHeader>
 
@@ -88,6 +128,14 @@ const VerifyEmail = () => {
                 <Alert variant="destructive">
                   <AlertDescription>{message}</AlertDescription>
                 </Alert>
+                <div className="mt-4 text-sm text-gray-500">
+                  <details>
+                    <summary>Troubleshooting information</summary>
+                    <pre className="mt-2 p-2 bg-gray-100 rounded text-xs overflow-auto">
+                      {debugInfo.join('\n')}
+                    </pre>
+                  </details>
+                </div>
                 <Button
                   onClick={() => window.location.href = '/login'}
                   className="mt-4"
