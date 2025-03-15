@@ -115,138 +115,67 @@ router.post(
     }
 
     const { username, email, password, firstName, lastName, acceptEmails } = req.body;
-    console.log('Registration request received for:', email);
-    
     const transaction = await sequelize.transaction();
-    let transactionCommitted = false;
+    let transactionCommitted = false;  // Add this flag to track if transaction was committed
 
-    try {
-      const salt = await bcrypt.genSalt(10);
-      const hashedPassword = await bcrypt.hash(password, salt);
+  try {
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
 
-      const user = await User.create(
-        {
-          username,
-          email,
-          password: hashedPassword,
-          firstName: firstName || null,
-          lastName: lastName || null,
-          acceptsEmails: acceptEmails || false,
-          isVerified: false
-        },
-        { transaction }
-      );
-      console.log('User created with ID:', user.id);
+    const user = await User.create(
+      {
+        username,
+        email,
+        password: hashedPassword,
+        firstName: firstName || null,
+        lastName: lastName || null,
+        acceptsEmails: acceptEmails || false,
+        isVerified: false
+      },
+      { transaction }
+    );
 
-      // Pass the transaction to generateVerificationToken
-      console.log('Generating verification token with transaction...');
-      const verificationToken = await user.generateVerificationToken(transaction);
-      console.log('Token generation complete, preparing to commit transaction...');
+    const verificationToken = await user.generateVerificationToken();
 
-      // FIRST commit the transaction, THEN send the email
-      await transaction.commit();
-      transactionCommitted = true;
-      console.log('Transaction committed successfully');
+    // IMPORTANT: First commit the transaction, THEN send the email
+    await transaction.commit();
+    transactionCommitted = true;  // Set the flag to true after successful commit
 
-      // Check if token is in database after commit
-      const savedUser = await User.findOne({ where: { email } });
-      console.log('User verification token after commit (first 8 chars):', 
-        savedUser.verificationToken ? savedUser.verificationToken.substring(0, 8) + '...' : 'NULL');
-      
-      // Log frontend URL being used
-      console.log('FRONTEND_URL being used for links:', process.env.FRONTEND_URL);
-      
-      // Then construct the verification link and send the email
-      const baseUrl = process.env.FRONTEND_URL.trim().replace(/\/$/, '');
-      const verificationLink = `${baseUrl}/verify-email?token=${encodeURIComponent(verificationToken)}`;
-      console.log('Verification link (redacted):', verificationLink.replace(verificationToken, '[TOKEN]'));
+    // Then construct the verification link and send the email
+    const baseUrl = process.env.FRONTEND_URL.trim().replace(/\/$/, '');
+    const verificationLink = `${baseUrl}/verify-email?token=${verificationToken}`;
 
-      // Use new email retry mechanism
-      await sendEmailWithRetry({
-        to: email,
-        subject: 'Verify Your Email Address',
-        html: emailService.getVerificationEmailTemplate(verificationLink, username)
-      });
-      console.log('Verification email sent successfully');
+    // Use new email retry mechanism
+    await sendEmailWithRetry({
+      to: email,
+      subject: 'Verify Your Email Address',
+      html: emailService.getVerificationEmailTemplate(verificationLink, username)
+    });
 
-      res.status(200).json({
-        status: 'success',
-        message: 'Registration successful! Please check your email to verify your account.',
-        requiresVerification: true
-      });
-    } catch (err) {
-      console.error('Registration error:', err);
-      if (!transactionCommitted) {
-        await transaction.rollback();
-        console.log('Transaction rolled back');
-      }
-      next(new AppError(err.message || 'Registration failed', 400));
+    res.status(200).json({
+      status: 'success',
+      message: 'Registration successful! Please check your email to verify your account.',
+      requiresVerification: true
+    });
+  } catch (err) {
+    if (!transactionCommitted) {
+      await transaction.rollback();
     }
+    next(new AppError(err.message || 'Registration failed', 400));
   }
-);
+});
 
 // Email Verification Route
 router.post('/verify-email',
   verificationLimiter,
   async (req, res, next) => {
     try {
-      console.log('=== Verification request received ===');
+      // Add these debug logs
+      console.log('Verification request received');
       console.log('Request body:', req.body);
-      console.log('Token from request:', req.body.token ? req.body.token.substring(0, 8) + '...' : undefined);
+      console.log('Token from request:', req.body.token);
       console.log('Token type:', typeof req.body.token);
       console.log('Token length:', req.body.token ? req.body.token.length : 0);
-      
-      // Enhanced connection and domain logging
-      console.log('Connection info:', {
-        protocol: req.protocol,
-        secure: req.secure,
-        hostname: req.hostname,
-        originalUrl: req.originalUrl,
-        'x-forwarded-proto': req.get('x-forwarded-proto'),
-        'x-forwarded-host': req.get('x-forwarded-host'),
-        'x-forwarded-for': req.get('x-forwarded-for')
-      });
-      
-      // Check for domain or protocol mismatches
-      const frontendUrl = process.env.FRONTEND_URL?.trim() || 'Not set';
-      try {
-        const configuredUrl = new URL(frontendUrl);
-        const expectedHost = configuredUrl.host;
-        const actualHost = req.headers.host;
-        const expectedProtocol = configuredUrl.protocol.replace(':', '');
-        const actualProtocol = req.headers['x-forwarded-proto'] || req.protocol;
-        
-        console.log('URL comparison:', {
-          expectedHost,
-          actualHost,
-          expectedProtocol,
-          actualProtocol,
-          hostsMatch: expectedHost === actualHost,
-          protocolsMatch: expectedProtocol === actualProtocol
-        });
-        
-        if (expectedHost !== actualHost) {
-          console.warn(`⚠️ Domain mismatch: Expected ${expectedHost}, got ${actualHost}`);
-        }
-        if (expectedProtocol !== actualProtocol) {
-          console.warn(`⚠️ Protocol mismatch: Expected ${expectedProtocol}, got ${actualProtocol}`);
-        }
-      } catch (e) {
-        console.error('Error comparing URLs:', e);
-      }
-      
-      // Log cookie information to check for cookie domain issues
-      console.log('Cookies received:', Object.keys(req.cookies).length > 0 ? 'Yes' : 'No');
-      if (Object.keys(req.cookies).length > 0) {
-        console.log('Cookie keys:', Object.keys(req.cookies));
-      }
-      
-      console.log('Headers:', {
-        host: req.headers.host,
-        origin: req.headers.origin,
-        referer: req.headers.referer,
-        'user-agent': req.headers['user-agent']
-      });
       
       const { token } = req.body;
       if (!token) {
@@ -254,79 +183,39 @@ router.post('/verify-email',
         throw new AppError('Verification token is required', 400);
       }
 
-      // Try both raw and decoded tokens if they differ
-      let tokens = [token];
-      try {
-        const decodedToken = decodeURIComponent(token);
-        if (decodedToken !== token) {
-          console.log('Token appears to be URL-encoded, also trying decoded version');
-          tokens.push(decodedToken);
-        }
-      } catch (e) {
-        console.log('Error decoding token:', e);
-      }
-
-      // Try each token variant
-      let user = null;
+      // Log the token before hashing
+      console.log('Token before hashing:', token);
       
-      for (const tokenToTry of tokens) {
-        // Log the token before hashing
-        console.log('Trying token (first 8 chars):', tokenToTry.substring(0, 8) + '...');
-        
-        const hashedToken = crypto
-          .createHash('sha256')
-          .update(tokenToTry)
-          .digest('hex');
-        
-        // Log the hashed token
-        console.log('Hashed token (first 8 chars):', hashedToken.substring(0, 8) + '...');
-        
-        // Check for user with this token
-        user = await User.findOne({
-          where: {
-            verificationToken: hashedToken,
-            verificationExpiry: {
-              [Op.gt]: new Date()
-            },
-            isVerified: false
-          }
-        });
-        
-        // Log query result
-        console.log('User found with this token?', !!user);
-        
-        if (user) {
-          // If user found, break out of the loop
-          console.log('Found valid user with ID:', user.id);
-          break;
+      const hashedToken = crypto
+        .createHash('sha256')
+        .update(token)
+        .digest('hex');
+      
+      // Log the hashed token
+      console.log('Hashed token:', hashedToken);
+      
+      const user = await User.findOne({
+        where: {
+          verificationToken: hashedToken,
+          verificationExpiry: {
+            [Op.gt]: new Date()
+          },
+          isVerified: false
         }
-      }
+      });
 
-      // If no user found with any token variant
+      // Log user lookup result
+      console.log('User found?', !!user);
+
       if (!user) {
-        // Check for any unverified users that might match
-        const allUnverifiedUsers = await User.findAll({ 
-          where: { isVerified: false },
-          attributes: ['id', 'email', 'verificationToken', 'verificationExpiry']
-        });
-        
-        console.log('All unverified users:', allUnverifiedUsers.length);
-        for (const u of allUnverifiedUsers) {
-          console.log(`User #${u.id}: token: ${u.verificationToken ? u.verificationToken.substring(0, 8) + '...' : 'NULL'}, expiry: ${u.verificationExpiry}`);
-        }
-        
         throw new AppError('Invalid or expired verification token', 400);
       }
 
-      // Update user to verified state
-      console.log('Updating user to verified state');
       user.isVerified = true;
       user.verificationToken = null;
       user.verificationExpiry = null;
       await user.save();
-      console.log('User successfully verified');
 
-      // Generate authentication token
       const payload = { 
         userId: user.id,
         username: user.username
@@ -336,26 +225,13 @@ router.post('/verify-email',
         expiresIn: TOKEN_EXPIRY_NORMAL
       });
 
-      // Set cookie with proper settings based on environment
-      const isProduction = process.env.NODE_ENV === 'production';
-      const secureFlag = isProduction || req.secure || req.headers['x-forwarded-proto'] === 'https';
-      
-      console.log('Setting cookie with options:', {
-        httpOnly: true,
-        secure: secureFlag,
-        sameSite: 'Lax',
-        maxAge: COOKIE_MAX_AGE_NORMAL,
-        domain: undefined
-      });
-      
       res.cookie('token', authToken, {
         httpOnly: true,
-        secure: secureFlag, // Use HTTPS in production or when accessed via HTTPS
+        secure: false,
         sameSite: 'Lax',
         maxAge: COOKIE_MAX_AGE_NORMAL,
         domain: undefined
       });
-      console.log('Authentication cookie set');
 
       res.json({
         status: 'success',
@@ -363,7 +239,6 @@ router.post('/verify-email',
         verified: true
       });
     } catch (err) {
-      console.error('Verification error:', err);
       next(err);
     }
   }
@@ -373,34 +248,28 @@ router.post('/verify-email',
 router.post('/resend-verification',
   resendVerificationLimiter,
   [body('email').isEmail().withMessage('Valid email is required')],
-  async (req, res, next) => {
+  async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({ errors: errors.array() });
     }
 
     try {
-      console.log('=== Resend verification request received ===');
       const { email } = req.body;
-      console.log('Email:', email);
-      
       const user = await User.findOne({ 
         where: { 
           email,
           isVerified: false
         } 
       });
-      console.log('Unverified user found?', !!user);
 
       if (user) {
         // Generate new token
-        console.log('Generating new verification token for user ID:', user.id);
         const verificationToken = await user.generateVerificationToken();
 
         // Construct the full verification URL
         const baseUrl = process.env.FRONTEND_URL.trim().replace(/\/$/, '');
-        const verificationLink = `${baseUrl}/verify-email?token=${encodeURIComponent(verificationToken)}`;
-        console.log('New verification link (redacted):', verificationLink.replace(verificationToken, '[TOKEN]'));
+        const verificationLink = `${baseUrl}/verify-email?token=${verificationToken}`;
 
         // Send email with the full link
         await sendEmailWithRetry({
@@ -408,14 +277,12 @@ router.post('/resend-verification',
           subject: 'Verify Your Email Address',
           html: emailService.getVerificationEmailTemplate(verificationLink, user.username)
         });
-        console.log('Resend verification email sent successfully');
       }
 
       res.json({
         message: 'If an unverified account exists with this email, a new verification link will be sent.'
       });
     } catch (err) {
-      console.error('Resend verification error:', err);
       next(new AppError('Failed to resend verification email', 500));
     }
   }

@@ -158,34 +158,19 @@ User.prototype.verifyPasswordResetToken = function(token) {
   );
 };
 
-User.prototype.generateVerificationToken = async function(transaction) {
-  console.log('Generating verification token for user ID:', this.id);
+// Instance methods for email verification
+User.prototype.generateVerificationToken = async function() {
   const verificationToken = crypto.randomBytes(32).toString('hex');
-  console.log('Generated plain token:', verificationToken.substring(0, 8) + '...');
   
   const hashedToken = crypto
     .createHash('sha256')
     .update(verificationToken)
     .digest('hex');
-  console.log('Hashed token to be saved:', hashedToken.substring(0, 8) + '...');
 
   this.verificationToken = hashedToken;
   this.verificationExpiry = new Date(Date.now() + 86400000); // 24 hour expiry
   
-  // Use the transaction if one is provided
-  const saveOptions = transaction ? { transaction } : undefined;
-  console.log('Save options:', saveOptions ? 'Using transaction' : 'No transaction');
-  
-  await this.save(saveOptions);
-  
-  // Double-check the token was saved correctly
-  try {
-    const refreshedUser = await User.findByPk(this.id);
-    console.log('Token in database after save (first 8 chars):', refreshedUser.verificationToken.substring(0, 8) + '...');
-    console.log('Do tokens match?', refreshedUser.verificationToken === hashedToken);
-  } catch (err) {
-    console.error('Error verifying token was saved:', err);
-  }
+  await this.save();
   
   return verificationToken;
 };
