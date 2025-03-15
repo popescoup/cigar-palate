@@ -55,61 +55,6 @@ const statsRoutes = require('./routes/statsRoutes');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Log application environment configuration
-console.log('===== Application Environment =====');
-console.log('NODE_ENV:', process.env.NODE_ENV);
-console.log('FRONTEND_URL:', process.env.FRONTEND_URL);
-
-// Check for common environment issues
-if (!process.env.FRONTEND_URL) {
-  console.error('⚠️ ERROR: FRONTEND_URL environment variable is not set');
-} else {
-  try {
-    const frontendUrl = new URL(process.env.FRONTEND_URL);
-    console.log('Frontend configuration:', {
-      protocol: frontendUrl.protocol,
-      host: frontendUrl.host,
-      hostname: frontendUrl.hostname,
-      port: frontendUrl.port || 'default',
-      pathname: frontendUrl.pathname
-    });
-    
-    // Check for protocol issues
-    if (frontendUrl.protocol !== 'https:' && process.env.NODE_ENV === 'production') {
-      console.warn('⚠️ SECURITY WARNING: FRONTEND_URL does not use HTTPS in production');
-    }
-    
-    // Check for common domain issues
-    if (frontendUrl.hostname.startsWith('www.') && !app.get('corsOptions').origin.includes(`https://${frontendUrl.hostname}`)) {
-      console.warn(`⚠️ CORS WARNING: www subdomain ${frontendUrl.hostname} may not be in CORS whitelist`);
-    } else if (!frontendUrl.hostname.startsWith('www.') && !app.get('corsOptions').origin.includes(`https://www.${frontendUrl.hostname}`)) {
-      console.warn(`⚠️ CORS WARNING: www version of ${frontendUrl.hostname} may not be in CORS whitelist`);
-    }
-  } catch (e) {
-    console.error('⚠️ ERROR: FRONTEND_URL is invalid:', e.message);
-  }
-}
-
-// Check email-related environment variables
-if (!process.env.MAILGUN_API_KEY) {
-  console.error('⚠️ ERROR: MAILGUN_API_KEY environment variable is not set');
-}
-if (!process.env.MAILGUN_DOMAIN) {
-  console.error('⚠️ ERROR: MAILGUN_DOMAIN environment variable is not set');
-}
-if (!process.env.MAILGUN_FROM_ADDRESS) {
-  console.warn('⚠️ WARNING: MAILGUN_FROM_ADDRESS environment variable is not set, using default');
-}
-
-// Check JWT secret for authentication
-if (!process.env.JWT_SECRET) {
-  console.error('⚠️ ERROR: JWT_SECRET environment variable is not set');
-} else if (process.env.JWT_SECRET.length < 32 && process.env.NODE_ENV === 'production') {
-  console.warn('⚠️ SECURITY WARNING: JWT_SECRET is too short for production use');
-}
-
-console.log('==================================');
-
 app.set('trust proxy', true);
 
 // Enable CORS for requests from frontend

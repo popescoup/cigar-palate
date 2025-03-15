@@ -116,54 +116,50 @@ router.post(
 
     const { username, email, password, firstName, lastName, acceptEmails } = req.body;
     const transaction = await sequelize.transaction();
-    let transactionCommitted = false;  // Add this flag to track if transaction was committed
 
-  try {
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
+    try {
+      const salt = await bcrypt.genSalt(10);
+      const hashedPassword = await bcrypt.hash(password, salt);
 
-    const user = await User.create(
-      {
-        username,
-        email,
-        password: hashedPassword,
-        firstName: firstName || null,
-        lastName: lastName || null,
-        acceptsEmails: acceptEmails || false,
-        isVerified: false
-      },
-      { transaction }
-    );
+      const user = await User.create(
+        {
+          username,
+          email,
+          password: hashedPassword,
+          firstName: firstName || null,
+          lastName: lastName || null,
+          acceptsEmails: acceptEmails || false,
+          isVerified: false
+        },
+        { transaction }
+      );
 
-    const verificationToken = await user.generateVerificationToken();
+      const verificationToken = await user.generateVerificationToken();
 
-    // IMPORTANT: First commit the transaction, THEN send the email
-    await transaction.commit();
-    transactionCommitted = true;  // Set the flag to true after successful commit
+      // Construct the full verification URL
+      const baseUrl = process.env.FRONTEND_URL.trim().replace(/\/$/, '');
+      const verificationLink = `${baseUrl}/verify-email?token=${verificationToken}`;
 
-    // Then construct the verification link and send the email
-    const baseUrl = process.env.FRONTEND_URL.trim().replace(/\/$/, '');
-    const verificationLink = `${baseUrl}/verify-email?token=${verificationToken}`;
+      // Use new email retry mechanism
+      await sendEmailWithRetry({
+        to: email,
+        subject: 'Verify Your Email Address',
+        html: emailService.getVerificationEmailTemplate(verificationLink, username)
+      });
 
-    // Use new email retry mechanism
-    await sendEmailWithRetry({
-      to: email,
-      subject: 'Verify Your Email Address',
-      html: emailService.getVerificationEmailTemplate(verificationLink, username)
-    });
+      await transaction.commit();
 
-    res.status(200).json({
-      status: 'success',
-      message: 'Registration successful! Please check your email to verify your account.',
-      requiresVerification: true
-    });
-  } catch (err) {
-    if (!transactionCommitted) {
+      res.status(200).json({
+        status: 'success',
+        message: 'Registration successful! Please check your email to verify your account.',
+        requiresVerification: true
+      });
+    } catch (err) {
       await transaction.rollback();
+      next(new AppError(err.message || 'Registration failed', 400));
     }
-    next(new AppError(err.message || 'Registration failed', 400));
   }
-});
+);
 
 // Email Verification Route
 router.post('/verify-email',
