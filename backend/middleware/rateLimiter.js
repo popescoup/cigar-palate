@@ -1,14 +1,19 @@
 // middleware/rateLimiter.js
 const rateLimit = require('express-rate-limit');
 
-// Generic rate limiter creator
+// Generic rate limiter creator with proper proxy handling
 const createRateLimiter = (options) => {
   return rateLimit({
     windowMs: options.windowMs,
     max: options.max,
     message: options.message,
-    standardHeaders: true,
+    standardHeaders: true, 
     legacyHeaders: false,
+    // Use proper IP source based on Express's trust proxy setting
+    keyGenerator: (req) => {
+      // Get IP from req.ip which uses Express's trust proxy configuration
+      return req.ip || req.connection.remoteAddress;
+    }
   });
 };
 
@@ -23,7 +28,7 @@ const authLimiter = createRateLimiter({
 
 const verificationLimiter = createRateLimiter({
   windowMs: 60 * 60 * 1000, // 1 hour
-  max: 3, // 3 attempts
+  max: 10, // 10 attempts
   message: { 
     error: 'Too many verification attempts. Please try again after 1 hour.' 
   }

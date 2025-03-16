@@ -80,9 +80,9 @@ if (!process.env.FRONTEND_URL) {
     }
     
     // Check for common domain issues
-    if (frontendUrl.hostname.startsWith('www.') && !app.get('corsOptions').origin.includes(`https://${frontendUrl.hostname}`)) {
+    if (frontendUrl.hostname.startsWith('www.') && !app.get('corsOptions')?.origin?.includes(`https://${frontendUrl.hostname}`)) {
       console.warn(`⚠️ CORS WARNING: www subdomain ${frontendUrl.hostname} may not be in CORS whitelist`);
-    } else if (!frontendUrl.hostname.startsWith('www.') && !app.get('corsOptions').origin.includes(`https://www.${frontendUrl.hostname}`)) {
+    } else if (!frontendUrl.hostname.startsWith('www.') && !app.get('corsOptions')?.origin?.includes(`https://www.${frontendUrl.hostname}`)) {
       console.warn(`⚠️ CORS WARNING: www version of ${frontendUrl.hostname} may not be in CORS whitelist`);
     }
   } catch (e) {
@@ -110,20 +110,63 @@ if (!process.env.JWT_SECRET) {
 
 console.log('==================================');
 
-app.set('trust proxy', true);
+// IMPORTANT: Configure trust proxy more securely
+// Only trust specific known proxies instead of 'true' which trusts everything
+// This addresses the express-rate-limit warning
+app.set('trust proxy', [
+  'loopback',                  // localhost
+  'linklocal',                 // 169.254.0.0/16
+  'uniquelocal',               // 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
+  '172.69.0.0/16',             // Cloudflare IPs
+  '54.0.0.0/8',                // AWS IPs 
+  '138.197.0.0/16',            // DigitalOcean IPs
+  '159.203.0.0/16',            // DigitalOcean IPs
+  '104.131.0.0/16'             // DigitalOcean IPs
+]);
 
-// Enable CORS for requests from frontend
+// Determine allowed origins based on environment
+const allowedOrigins = [
+  'http://localhost:3001',
+  `http://192.168.1.243:3001`
+];
+
+// In production, always include both www and non-www variants
+if (process.env.NODE_ENV === 'production' || process.env.FRONTEND_URL) {
+  try {
+    const frontendUrl = new URL(process.env.FRONTEND_URL || 'https://www.cigarpalate.com');
+    const hostname = frontendUrl.hostname;
+    
+    // Add the configured URL
+    allowedOrigins.push(`${frontendUrl.protocol}//${hostname}`);
+    
+    // Add variants with and without www
+    if (hostname.startsWith('www.')) {
+      const nonWwwHostname = hostname.substring(4);
+      allowedOrigins.push(`${frontendUrl.protocol}//${nonWwwHostname}`);
+    } else {
+      allowedOrigins.push(`${frontendUrl.protocol}//www.${hostname}`);
+    }
+    
+    // Always include the specific cigarpalate.com domains
+    allowedOrigins.push('https://cigarpalate.com');
+    allowedOrigins.push('https://www.cigarpalate.com');
+  } catch (e) {
+    console.error('Error parsing FRONTEND_URL for CORS:', e);
+    // Fallback to hardcoded domains
+    allowedOrigins.push('https://cigarpalate.com');
+    allowedOrigins.push('https://www.cigarpalate.com');
+  }
+}
+
+// Log the allowed origins
+console.log('CORS allowed origins:', allowedOrigins);
+
+// Enable CORS for requests from frontend with proper origin handling
 app.use(cors({
-    origin: [
-        'http://localhost:3001',
-        `http://192.168.1.243:3001`,
-        'https://cigarpalate.com',
-        'https://www.cigarpalate.com',
-        process.env.FRONTEND_URL 
-    ],
+    origin: allowedOrigins,
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Accept']
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With']
 }));
 
 // Increase payload size limit for JSON requests
@@ -131,6 +174,33 @@ app.use(express.json({ limit: '10mb' }));
 
 // Use cookie-parser middleware
 app.use(cookieParser());
+
+// Add middleware to set proper cookie domain in production
+app.use((req, res, next) => {
+  // Store the original cookie function
+  const originalCookie = res.cookie;
+  
+  // Override the cookie function
+  res.cookie = function(name, value, options = {}) {
+    const isProduction = process.env.NODE_ENV === 'production';
+    
+    if (isProduction) {
+      // Get the host from headers
+      const host = req.get('x-forwarded-host') || req.get('host') || '';
+      
+      // Set domain for cigarpalate.com and its subdomains
+      if (host.includes('cigarpalate.com')) {
+        options.domain = '.cigarpalate.com';
+        console.log(`Setting cookie domain to ${options.domain} for ${name}`);
+      }
+    }
+    
+    // Call the original cookie function with updated options
+    return originalCookie.call(this, name, value, options);
+  };
+  
+  next();
+});
 
 // Serve static files from the 'uploads' directory
 app.use('/uploads', express.static(uploadsDir, {
@@ -280,6 +350,42 @@ if (process.env.NODE_ENV !== 'production') {
             idle: pool.idle,
             total: pool.total,
             pending: pool.pending
+        });
+    });
+    
+    // Debug endpoint for cookie test
+    app.get('/api/debug/cookie-test', (req, res) => {
+        const cookieName = 'test-cookie';
+        const cookieValue = `test-${Date.now()}`;
+        
+        // Get host information
+        const host = req.get('x-forwarded-host') || req.get('host');
+        const protocol = req.protocol;
+        const originalUrl = req.originalUrl;
+        
+        // Set a test cookie
+        res.cookie(cookieName, cookieValue, {
+            httpOnly: true,
+            secure: protocol === 'https',
+            maxAge: 60000 // 1 minute
+        });
+        
+        res.json({
+            message: 'Test cookie set',
+            cookie: {
+                name: cookieName,
+                value: cookieValue
+            },
+            request: {
+                headers: req.headers,
+                host,
+                protocol,
+                originalUrl,
+                ip: req.ip,
+                ips: req.ips,
+                secure: req.secure,
+                cookies: req.cookies
+            }
         });
     });
 }

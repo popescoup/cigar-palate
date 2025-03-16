@@ -178,13 +178,23 @@ User.prototype.generateVerificationToken = async function(transaction) {
   
   await this.save(saveOptions);
   
-  // Double-check the token was saved correctly
+  // Safety check - don't throw errors or rely on the result
   try {
-    const refreshedUser = await User.findByPk(this.id);
-    console.log('Token in database after save (first 8 chars):', refreshedUser.verificationToken.substring(0, 8) + '...');
-    console.log('Do tokens match?', refreshedUser.verificationToken === hashedToken);
+    if (transaction) {
+      // Don't try to check the token when inside a transaction - it won't be visible yet
+      console.log('Skipping token verification check - inside transaction');
+    } else {
+      const refreshedUser = await User.findByPk(this.id);
+      if (refreshedUser && refreshedUser.verificationToken) {
+        console.log('Token in database after save (first 8 chars):', 
+          refreshedUser.verificationToken.substring(0, 8) + '...');
+      } else {
+        console.log('Warning: Could not verify token was saved correctly');
+      }
+    }
   } catch (err) {
-    console.error('Error verifying token was saved:', err);
+    console.log('Non-critical error checking token:', err.message);
+    // Don't rethrow the error - allow token generation to proceed
   }
   
   return verificationToken;

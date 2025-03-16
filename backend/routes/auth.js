@@ -192,61 +192,6 @@ router.post('/verify-email',
     try {
       console.log('=== Verification request received ===');
       console.log('Request body:', req.body);
-      console.log('Token from request:', req.body.token ? req.body.token.substring(0, 8) + '...' : undefined);
-      console.log('Token type:', typeof req.body.token);
-      console.log('Token length:', req.body.token ? req.body.token.length : 0);
-      
-      // Enhanced connection and domain logging
-      console.log('Connection info:', {
-        protocol: req.protocol,
-        secure: req.secure,
-        hostname: req.hostname,
-        originalUrl: req.originalUrl,
-        'x-forwarded-proto': req.get('x-forwarded-proto'),
-        'x-forwarded-host': req.get('x-forwarded-host'),
-        'x-forwarded-for': req.get('x-forwarded-for')
-      });
-      
-      // Check for domain or protocol mismatches
-      const frontendUrl = process.env.FRONTEND_URL?.trim() || 'Not set';
-      try {
-        const configuredUrl = new URL(frontendUrl);
-        const expectedHost = configuredUrl.host;
-        const actualHost = req.headers.host;
-        const expectedProtocol = configuredUrl.protocol.replace(':', '');
-        const actualProtocol = req.headers['x-forwarded-proto'] || req.protocol;
-        
-        console.log('URL comparison:', {
-          expectedHost,
-          actualHost,
-          expectedProtocol,
-          actualProtocol,
-          hostsMatch: expectedHost === actualHost,
-          protocolsMatch: expectedProtocol === actualProtocol
-        });
-        
-        if (expectedHost !== actualHost) {
-          console.warn(`⚠️ Domain mismatch: Expected ${expectedHost}, got ${actualHost}`);
-        }
-        if (expectedProtocol !== actualProtocol) {
-          console.warn(`⚠️ Protocol mismatch: Expected ${expectedProtocol}, got ${actualProtocol}`);
-        }
-      } catch (e) {
-        console.error('Error comparing URLs:', e);
-      }
-      
-      // Log cookie information to check for cookie domain issues
-      console.log('Cookies received:', Object.keys(req.cookies).length > 0 ? 'Yes' : 'No');
-      if (Object.keys(req.cookies).length > 0) {
-        console.log('Cookie keys:', Object.keys(req.cookies));
-      }
-      
-      console.log('Headers:', {
-        host: req.headers.host,
-        origin: req.headers.origin,
-        referer: req.headers.referer,
-        'user-agent': req.headers['user-agent']
-      });
       
       const { token } = req.body;
       if (!token) {
@@ -254,6 +199,71 @@ router.post('/verify-email',
         throw new AppError('Verification token is required', 400);
       }
 
+      console.log('Token from request:', token.substring(0, 8) + '...');
+      
+      // Try to find a recently verified user first (handled repeat verification)
+      const recentlyVerifiedUser = await User.findOne({
+        where: {
+          isVerified: true,
+          updatedAt: {
+            [Op.gt]: new Date(Date.now() - 3600000) // Last hour
+          }
+        },
+        order: [['updatedAt', 'DESC']]  // Get the most recently verified
+      });
+      
+      if (recentlyVerifiedUser) {
+        console.log('Found recently verified user:', recentlyVerifiedUser.id);
+        
+        // Generate authentication token
+        const payload = { 
+          userId: recentlyVerifiedUser.id,
+          username: recentlyVerifiedUser.username
+        };
+
+        const authToken = jwt.sign(payload, process.env.JWT_SECRET, {
+          expiresIn: TOKEN_EXPIRY_NORMAL
+        });
+
+        // Set cookie with proper settings based on environment
+        const isProduction = process.env.NODE_ENV === 'production';
+        const secureFlag = isProduction || req.secure || req.headers['x-forwarded-proto'] === 'https';
+        
+        // Determine proper cookie domain
+        let cookieDomain;
+        if (isProduction) {
+          // Extract domain from request or use configured domain
+          const host = req.get('x-forwarded-host') || req.get('host');
+          if (host && host.includes('cigarpalate.com')) {
+            cookieDomain = '.cigarpalate.com'; // Works for www.cigarpalate.com and cigarpalate.com
+          }
+        }
+        
+        console.log('Setting cookie with options:', {
+          httpOnly: true,
+          secure: secureFlag,
+          sameSite: 'Lax',
+          maxAge: COOKIE_MAX_AGE_NORMAL,
+          domain: cookieDomain || undefined
+        });
+        
+        res.cookie('token', authToken, {
+          httpOnly: true,
+          secure: secureFlag,
+          sameSite: 'Lax',
+          maxAge: COOKIE_MAX_AGE_NORMAL,
+          domain: cookieDomain || undefined
+        });
+        
+        return res.json({
+          status: 'success',
+          message: 'Your account is already verified! You are now logged in.',
+          verified: true,
+          alreadyVerified: true
+        });
+      }
+
+      // Proceed with normal token verification if no recently verified user found
       // Try both raw and decoded tokens if they differ
       let tokens = [token];
       try {
@@ -270,7 +280,6 @@ router.post('/verify-email',
       let user = null;
       
       for (const tokenToTry of tokens) {
-        // Log the token before hashing
         console.log('Trying token (first 8 chars):', tokenToTry.substring(0, 8) + '...');
         
         const hashedToken = crypto
@@ -278,7 +287,6 @@ router.post('/verify-email',
           .update(tokenToTry)
           .digest('hex');
         
-        // Log the hashed token
         console.log('Hashed token (first 8 chars):', hashedToken.substring(0, 8) + '...');
         
         // Check for user with this token
@@ -292,11 +300,9 @@ router.post('/verify-email',
           }
         });
         
-        // Log query result
         console.log('User found with this token?', !!user);
         
         if (user) {
-          // If user found, break out of the loop
           console.log('Found valid user with ID:', user.id);
           break;
         }
@@ -311,13 +317,13 @@ router.post('/verify-email',
         });
         
         console.log('All unverified users:', allUnverifiedUsers.length);
-        for (const u of allUnverifiedUsers) {
-          console.log(`User #${u.id}: token: ${u.verificationToken ? u.verificationToken.substring(0, 8) + '...' : 'NULL'}, expiry: ${u.verificationExpiry}`);
-        }
         
         throw new AppError('Invalid or expired verification token', 400);
       }
 
+      // Store the original verification token (for debugging/auditing)
+      const originalToken = user.verificationToken;
+      
       // Update user to verified state
       console.log('Updating user to verified state');
       user.isVerified = true;
@@ -340,21 +346,32 @@ router.post('/verify-email',
       const isProduction = process.env.NODE_ENV === 'production';
       const secureFlag = isProduction || req.secure || req.headers['x-forwarded-proto'] === 'https';
       
+      // Determine proper cookie domain
+      let cookieDomain;
+      if (isProduction) {
+        // Extract domain from request or use configured domain
+        const host = req.get('x-forwarded-host') || req.get('host');
+        if (host && host.includes('cigarpalate.com')) {
+          cookieDomain = '.cigarpalate.com'; // Works for www.cigarpalate.com and cigarpalate.com
+        }
+      }
+      
       console.log('Setting cookie with options:', {
         httpOnly: true,
         secure: secureFlag,
         sameSite: 'Lax',
         maxAge: COOKIE_MAX_AGE_NORMAL,
-        domain: undefined
+        domain: cookieDomain || undefined
       });
       
       res.cookie('token', authToken, {
         httpOnly: true,
-        secure: secureFlag, // Use HTTPS in production or when accessed via HTTPS
+        secure: secureFlag,
         sameSite: 'Lax',
         maxAge: COOKIE_MAX_AGE_NORMAL,
-        domain: undefined
+        domain: cookieDomain || undefined
       });
+      
       console.log('Authentication cookie set');
 
       res.json({

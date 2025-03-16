@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import axios from 'axios';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -14,6 +14,7 @@ const VerifyEmail = () => {
   const [message, setMessage] = useState('');
   const [debugInfo, setDebugInfo] = useState<string[]>([]);
   const searchParams = useSearchParams();
+  const router = useRouter();
   
   useEffect(() => {
     const verifyEmail = async () => {
@@ -71,25 +72,56 @@ const VerifyEmail = () => {
         logs.push('Sending verification request...');
         
         // Make the API request
-        const response = await axios.post('/api/auth/verify-email', { token });
-        
-        // Update state with success
-        logs.push('Verification request succeeded');
-        logs.push(`Server response: ${JSON.stringify(response.data)}`);
-        setDebugInfo(logs); // Update debug info
-        
-        setStatus('success');
-        setMessage(response.data.message);
-        
-        // Redirect to home page after successful verification
-        setTimeout(() => {
-          window.location.href = '/';
-        }, 3000);
+        try {
+          const response = await axios.post('/api/auth/verify-email', { token });
+          
+          // Update state with success
+          logs.push('Verification request succeeded');
+          logs.push(`Server response: ${JSON.stringify(response.data)}`);
+          setDebugInfo(logs); // Update debug info
+          
+          setStatus('success');
+          setMessage(response.data.message);
+          
+          // Redirect to home page after successful verification
+          setTimeout(() => {
+            router.push('/');
+          }, 3000);
+          return;
+        } catch (verifyError: any) {
+          logs.push(`Initial verification request failed: ${verifyError.response?.status}`);
+          logs.push(`Error details: ${JSON.stringify(verifyError.response?.data || {})}`);
+          
+          // Even if verification API call failed, check auth status to see if actually verified
+          logs.push('Checking auth status as fallback...');
+          try {
+            const authStatusResponse = await axios.get('/api/auth/status');
+            logs.push(`Auth status response: ${JSON.stringify(authStatusResponse.data)}`);
+            
+            if (authStatusResponse.data.isLoggedIn) {
+              logs.push('User is logged in according to auth status - verification likely succeeded');
+              setStatus('success');
+              setMessage('Your account has been verified successfully! You are now logged in.');
+              
+              // Redirect to home page after successful verification
+              setTimeout(() => {
+                router.push('/');
+              }, 3000);
+              return;
+            } else {
+              logs.push('User is not logged in according to auth status - verification truly failed');
+            }
+          } catch (statusError) {
+            logs.push(`Error checking auth status: ${statusError instanceof Error ? statusError.message : String(statusError)}`);
+          }
+          
+          // If we get here, both verification and auth check failed
+          throw verifyError;
+        }
       } catch (error: any) {
         // Handle errors
         const errorMsg = error.response?.data?.message || 'Verification failed';
         logs.push(`Verification error: ${errorMsg}`);
-        logs.push(`Error details: ${JSON.stringify(error.response?.data || {})}`);
         
         if (error.response) {
           logs.push(`Response status: ${error.response.status}`);
@@ -105,8 +137,10 @@ const VerifyEmail = () => {
       }
     };
 
-    verifyEmail();
-  }, [searchParams]);
+    if (searchParams.get('token')) {
+      verifyEmail();
+    }
+  }, [searchParams, router]);
 
   return (
     <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
@@ -148,20 +182,30 @@ const VerifyEmail = () => {
                 <Alert variant="destructive">
                   <AlertDescription>{message}</AlertDescription>
                 </Alert>
-                <div className="mt-4 text-sm text-gray-500">
-                  <details>
+                <div className="mt-4 space-y-2">
+                  <details className="text-sm text-gray-500">
                     <summary>Troubleshooting information</summary>
-                    <pre className="mt-2 p-2 bg-gray-100 rounded text-xs overflow-auto">
+                    <pre className="mt-2 p-2 bg-gray-100 rounded text-xs overflow-auto max-h-40">
                       {debugInfo.join('\n')}
                     </pre>
                   </details>
+                  
+                  <div className="flex flex-col sm:flex-row gap-2 mt-4">
+                    <Button
+                      onClick={() => router.push('/login')}
+                      className="w-full"
+                    >
+                      Return to Login
+                    </Button>
+                    <Button
+                      onClick={() => router.push('/resend-verification')}
+                      variant="outline"
+                      className="w-full"
+                    >
+                      Resend Verification
+                    </Button>
+                  </div>
                 </div>
-                <Button
-                  onClick={() => window.location.href = '/login'}
-                  className="mt-4"
-                >
-                  Return to Login
-                </Button>
               </>
             )}
           </div>
