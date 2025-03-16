@@ -85,7 +85,7 @@ const VerifyEmail = () => {
           
           // Redirect to home page after successful verification
           setTimeout(() => {
-            router.push('/');
+            window.location.href = '/';
           }, 3000);
           return;
         } catch (verifyError: any) {
