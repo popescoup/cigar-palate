@@ -199,131 +199,85 @@ router.post('/verify-email',
         throw new AppError('Verification token is required', 400);
       }
 
-      console.log('Token from request:', token.substring(0, 8) + '...');
+      // Clean and log the token
+      const cleanToken = token.trim();
+      console.log('Token from request:', cleanToken.substring(0, 8) + '...');
       
-      // Try to find a recently verified user first (handled repeat verification)
-      const recentlyVerifiedUser = await User.findOne({
+      // Hash the token
+      const hashedToken = crypto
+        .createHash('sha256')
+        .update(cleanToken)
+        .digest('hex');
+      
+      console.log('Looking for user with hashed token:', hashedToken.substring(0, 8) + '...');
+      
+      // Try to find the user with the token
+      let user = await User.findOne({
         where: {
-          isVerified: true,
-          updatedAt: {
-            [Op.gt]: new Date(Date.now() - 3600000) // Last hour
-          }
-        },
-        order: [['updatedAt', 'DESC']]  // Get the most recently verified
+          verificationToken: hashedToken,
+          verificationExpiry: {
+            [Op.gt]: new Date()
+          },
+          isVerified: false
+        }
       });
       
-      if (recentlyVerifiedUser) {
-        console.log('Found recently verified user:', recentlyVerifiedUser.id);
-        
-        // Generate authentication token
-        const payload = { 
-          userId: recentlyVerifiedUser.id,
-          username: recentlyVerifiedUser.username
-        };
-
-        const authToken = jwt.sign(payload, process.env.JWT_SECRET, {
-          expiresIn: TOKEN_EXPIRY_NORMAL
-        });
-
-        // Set cookie with proper settings based on environment
-        const isProduction = process.env.NODE_ENV === 'production';
-        const secureFlag = isProduction || req.secure || req.headers['x-forwarded-proto'] === 'https';
-        
-        // Determine proper cookie domain
-        let cookieDomain;
-        if (isProduction) {
-          // Extract domain from request or use configured domain
-          const host = req.get('x-forwarded-host') || req.get('host');
-          if (host && host.includes('cigarpalate.com')) {
-            cookieDomain = '.cigarpalate.com'; // Works for www.cigarpalate.com and cigarpalate.com
-          }
-        }
-        
-        console.log('Setting cookie with options:', {
-          httpOnly: true,
-          secure: secureFlag,
-          sameSite: 'Lax',
-          maxAge: COOKIE_MAX_AGE_NORMAL,
-          domain: cookieDomain || undefined
-        });
-        
-        res.cookie('token', authToken, {
-          httpOnly: true,
-          secure: secureFlag,
-          sameSite: 'Lax',
-          maxAge: COOKIE_MAX_AGE_NORMAL,
-          domain: cookieDomain || undefined
-        });
-        
-        return res.json({
-          status: 'success',
-          message: 'Your account is already verified! You are now logged in.',
-          verified: true,
-          alreadyVerified: true
-        });
-      }
-
-      // Proceed with normal token verification if no recently verified user found
-      // Try both raw and decoded tokens if they differ
-      let tokens = [token];
-      try {
-        const decodedToken = decodeURIComponent(token);
-        if (decodedToken !== token) {
-          console.log('Token appears to be URL-encoded, also trying decoded version');
-          tokens.push(decodedToken);
-        }
-      } catch (e) {
-        console.log('Error decoding token:', e);
-      }
-
-      // Try each token variant
-      let user = null;
+      console.log('User found with token?', !!user);
       
-      for (const tokenToTry of tokens) {
-        console.log('Trying token (first 8 chars):', tokenToTry.substring(0, 8) + '...');
-        
-        const hashedToken = crypto
-          .createHash('sha256')
-          .update(tokenToTry)
-          .digest('hex');
-        
-        console.log('Hashed token (first 8 chars):', hashedToken.substring(0, 8) + '...');
-        
-        // Check for user with this token
-        user = await User.findOne({
-          where: {
-            verificationToken: hashedToken,
-            verificationExpiry: {
-              [Op.gt]: new Date()
-            },
-            isVerified: false
-          }
-        });
-        
-        console.log('User found with this token?', !!user);
-        
-        if (user) {
-          console.log('Found valid user with ID:', user.id);
-          break;
-        }
-      }
-
-      // If no user found with any token variant
       if (!user) {
-        // Check for any unverified users that might match
-        const allUnverifiedUsers = await User.findAll({ 
-          where: { isVerified: false },
-          attributes: ['id', 'email', 'verificationToken', 'verificationExpiry']
+        console.log('No unverified user found with this token. Checking if recently verified...');
+        
+        // IMPORTANT: Use 'updated_at' instead of 'updatedAt' for your database
+        const recentlyVerifiedUser = await User.findOne({
+          where: {
+            isVerified: true,
+            // Check users verified within the last hour
+            created_at: {
+              [Op.gt]: new Date(Date.now() - 3600000)
+            }
+          },
+          order: [['created_at', 'DESC']]
         });
         
-        console.log('All unverified users:', allUnverifiedUsers.length);
+        if (recentlyVerifiedUser) {
+          console.log('Found recently verified user:', recentlyVerifiedUser.id);
+          
+          // User already verified, set them up with auth
+          const payload = { 
+            userId: recentlyVerifiedUser.id,
+            username: recentlyVerifiedUser.username
+          };
+
+          const authToken = jwt.sign(payload, process.env.JWT_SECRET, {
+            expiresIn: TOKEN_EXPIRY_NORMAL
+          });
+
+          // Set cookie with proper settings based on environment
+          const isProduction = process.env.NODE_ENV === 'production';
+          const secureFlag = isProduction || req.secure || req.headers['x-forwarded-proto'] === 'https';
+          
+          // Set the cookie for auth
+          res.cookie('token', authToken, {
+            httpOnly: true,
+            secure: secureFlag,
+            sameSite: 'Lax',
+            maxAge: COOKIE_MAX_AGE_NORMAL
+          });
+          
+          console.log('Auth cookie set for already verified user');
+          
+          return res.json({
+            status: 'success',
+            message: 'Your account is already verified! You are now logged in.',
+            verified: true,
+            alreadyVerified: true
+          });
+        }
         
+        // If we get here, no user was found and none was recently verified
         throw new AppError('Invalid or expired verification token', 400);
       }
 
-      // Store the original verification token (for debugging/auditing)
-      const originalToken = user.verificationToken;
-      
       // Update user to verified state
       console.log('Updating user to verified state');
       user.isVerified = true;
@@ -346,30 +300,11 @@ router.post('/verify-email',
       const isProduction = process.env.NODE_ENV === 'production';
       const secureFlag = isProduction || req.secure || req.headers['x-forwarded-proto'] === 'https';
       
-      // Determine proper cookie domain
-      let cookieDomain;
-      if (isProduction) {
-        // Extract domain from request or use configured domain
-        const host = req.get('x-forwarded-host') || req.get('host');
-        if (host && host.includes('cigarpalate.com')) {
-          cookieDomain = '.cigarpalate.com'; // Works for www.cigarpalate.com and cigarpalate.com
-        }
-      }
-      
-      console.log('Setting cookie with options:', {
-        httpOnly: true,
-        secure: secureFlag,
-        sameSite: 'Lax',
-        maxAge: COOKIE_MAX_AGE_NORMAL,
-        domain: cookieDomain || undefined
-      });
-      
       res.cookie('token', authToken, {
         httpOnly: true,
         secure: secureFlag,
         sameSite: 'Lax',
-        maxAge: COOKIE_MAX_AGE_NORMAL,
-        domain: cookieDomain || undefined
+        maxAge: COOKIE_MAX_AGE_NORMAL
       });
       
       console.log('Authentication cookie set');
