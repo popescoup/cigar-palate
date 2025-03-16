@@ -24,7 +24,6 @@ const VerifyEmail = () => {
       try {
         // Get token from URL
         const rawToken = searchParams.get('token');
-        logs.push(`Raw token from URL: ${rawToken}`);
         logs.push(`Token length: ${rawToken ? rawToken.length : 0}`);
         
         // Add domain/protocol logging
@@ -47,8 +46,6 @@ const VerifyEmail = () => {
         let token = rawToken;
         try {
           const decodedToken = decodeURIComponent(rawToken || '');
-          logs.push(`URL-decoded token: ${decodedToken}`);
-          logs.push(`Decoded token length: ${decodedToken.length}`);
           
           // If decoding changes the token, there might be encoding issues
           if (decodedToken !== rawToken) {
@@ -77,7 +74,6 @@ const VerifyEmail = () => {
           
           // Update state with success
           logs.push('Verification request succeeded');
-          logs.push(`Server response: ${JSON.stringify(response.data)}`);
           setDebugInfo(logs); // Update debug info
           
           setStatus('success');
@@ -90,7 +86,6 @@ const VerifyEmail = () => {
           return;
         } catch (verifyError: any) {
           logs.push(`Initial verification request failed: ${verifyError.response?.status}`);
-          logs.push(`Error details: ${JSON.stringify(verifyError.response?.data || {})}`);
           
           // Even if verification API call failed, check auth status to see if actually verified
           logs.push('Checking auth status as fallback...');
@@ -125,7 +120,6 @@ const VerifyEmail = () => {
         
         if (error.response) {
           logs.push(`Response status: ${error.response.status}`);
-          logs.push(`Response headers: ${JSON.stringify(error.response.headers)}`);
         }
         
         // Update debug info
