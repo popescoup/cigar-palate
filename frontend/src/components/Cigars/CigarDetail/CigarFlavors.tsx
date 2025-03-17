@@ -3,7 +3,7 @@ import { useMutation, useQuery, QueryClient } from '@tanstack/react-query';
 import { api } from '@/utils/axiosConfig';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import type { User } from '@/types/user';
 import type { FlavorRanking } from '@/types/cigars';
@@ -28,6 +28,33 @@ const COLORS = [
   '#14b8a6', // teal-500
   '#8b5cf6', // violet-500
 ];
+
+// Custom legend component with more explicit text wrapping
+const CustomLegend = ({ data }: { data: { name: string; value: number; color: string }[] }) => {
+  return (
+    <div className="flex flex-col gap-3">
+      {data.map((entry, index) => (
+        <div key={`legend-item-${index}`} className="flex items-start">
+          <div 
+            className="w-4 h-4 mr-3 mt-0.5 flex-shrink-0 rounded-sm" 
+            style={{ backgroundColor: entry.color }}
+          />
+          <div 
+            className="max-w-20 overflow-hidden text-base" 
+            style={{
+              wordWrap: 'break-word',
+              wordBreak: 'break-word',
+              hyphens: 'auto',
+              lineHeight: '1.3rem'
+            }}
+          >
+            {entry.name}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
 
 const CigarFlavors: React.FC<CigarFlavorsProps> = ({
   flavorRankings = [], // Add default empty array
@@ -61,7 +88,7 @@ const CigarFlavors: React.FC<CigarFlavorsProps> = ({
     retry: 1
   });
 
-const hasRanked = userFlavorRankingStatus?.hasRanked || false;
+  const hasRanked = userFlavorRankingStatus?.hasRanked || false;
 
   // Get all possible rank values (1 to number of flavors)
   const possibleRanks = useMemo(() => 
@@ -108,6 +135,15 @@ const hasRanked = userFlavorRankingStatus?.hasRanked || false;
         value: (item.rawValue / total) * 100
       }));
   }, [validFlavorRankings]);
+
+  // Prepare data for custom legend including colors
+  const legendData = useMemo(() => {
+    return pieData.map((entry, index) => ({
+      name: entry.name,
+      value: entry.value,
+      color: COLORS[index % COLORS.length]
+    }));
+  }, [pieData]);
 
   const flavorRankingMutation = useMutation({
     mutationFn: async (rankings: { flavor: string, rank: number | null }[]) => {
@@ -187,47 +223,47 @@ const hasRanked = userFlavorRankingStatus?.hasRanked || false;
         )}
       </div>
 
-      {/* Pie Chart Section - Always visible */}
+      {/* Pie Chart and Legend Section - Always visible */}
       {pieData.length > 0 && (
       <div className="mt-1 mb-1 h-[200px] sm:h-[250px]">
-        <ResponsiveContainer width="100%" height="100%">
-          <PieChart>
-            <Pie
-              data={pieData}
-              cx="50%"
-              cy="50%"
-              innerRadius={60}
-              outerRadius={100}
-              paddingAngle={2}
-              dataKey="value"
-            >
-              {pieData.map((entry, index) => (
-                <Cell 
-                  key={`cell-${index}`} 
-                  fill={COLORS[index % COLORS.length]}
-                  stroke="#fff"
-                  strokeWidth={1}
+        <div className="flex h-full">
+          <div className="w-3/5 h-full relative">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={pieData}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={50}
+                  outerRadius={90}
+                  paddingAngle={2}
+                  dataKey="value"
+                  strokeWidth={2}
+                >
+                  {pieData.map((entry, index) => (
+                    <Cell 
+                      key={`cell-${index}`} 
+                      fill={COLORS[index % COLORS.length]}
+                      stroke="#fff"
+                      strokeWidth={2}
+                    />
+                  ))}
+                </Pie>
+                <Tooltip
+                  formatter={(value: number) => `${value.toFixed(1)}%`}
+                  contentStyle={{
+                    backgroundColor: 'white',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: '0.375rem'
+                  }}
                 />
-              ))}
-            </Pie>
-            <Tooltip
-              formatter={(value: number) => `${value.toFixed(1)}%`}
-              contentStyle={{
-                backgroundColor: 'white',
-                border: '1px solid #e2e8f0',
-                borderRadius: '0.375rem'
-              }}
-            />
-            <Legend 
-              layout="vertical" 
-              align="right"
-              verticalAlign="middle"
-              wrapperStyle={{
-                paddingLeft: '10px'
-              }}
-            />
-          </PieChart>
-        </ResponsiveContainer>
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="w-2/5 pl-6 flex items-center">
+            <CustomLegend data={legendData} />
+          </div>
+        </div>
       </div>
       )}
 
@@ -255,7 +291,7 @@ const hasRanked = userFlavorRankingStatus?.hasRanked || false;
 
           {/* Table section */}
           <div>
-  <table className="w-full">
+            <table className="w-full">
               <thead>
                 <tr>
                   <th className="text-left text-sm font-medium text-gray-500 pb-2">Flavor</th>
