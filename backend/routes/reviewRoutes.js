@@ -156,13 +156,18 @@ router.post('/cigars/:id/reviews', auth, async (req, res) => {
       vote_count: 1  // Initialize with 1 for the initial vote
     }, { transaction: t });
 
-    // Create the initial vote record
-    await Vote.create({
-      user_id: userId,
-      voteable_id: review.id,
-      voteable_type: 'review',
-      vote_type: 'like'
-    }, { transaction: t });
+    // Create the initial vote record using findOrCreate to handle duplicates
+await Vote.findOrCreate({
+  where: {
+    user_id: userId,
+    voteable_id: review.id,
+    voteable_type: 'review'
+  },
+  defaults: {
+    vote_type: 'like'
+  },
+  transaction: t
+});
 
     // Add reputation for the automatic upvote
     await User.increment('reputation', {

@@ -66,13 +66,18 @@ router.post('/threads/:threadId/replies', auth, replyValidation, async (req, res
             vote_count: 1
         }, { transaction });
 
-        // Create the initial upvote for the creator
-        await Vote.create({
-            user_id: req.user.userId,
-            voteable_id: reply.id,
-            voteable_type: 'reply',
-            vote_type: 'like'
-        }, { transaction });
+        // Create the initial upvote for the creator using findOrCreate to handle duplicates
+await Vote.findOrCreate({
+    where: {
+      user_id: req.user.userId,
+      voteable_id: reply.id,
+      voteable_type: 'reply'
+    },
+    defaults: {
+      vote_type: 'like'
+    },
+    transaction
+  });
 
         // Add reputation for the automatic upvote
         await User.increment('reputation', {
