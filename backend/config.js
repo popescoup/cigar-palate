@@ -26,8 +26,8 @@ const sequelize = new Sequelize(process.env.DB_NAME, process.env.DB_USER, proces
         } : {})
     },
     retry: {
-        max: 5,
-        backoffBase: 3000,
+        max: 1,
+        backoffBase: 100,
         backoffExponent: 1.1
     },
     logging: process.env.NODE_ENV === 'development' ? 

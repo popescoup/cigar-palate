@@ -66,18 +66,26 @@ router.post('/threads/:threadId/replies', auth, replyValidation, async (req, res
             vote_count: 1
         }, { transaction });
 
-        // Create the initial upvote for the creator using findOrCreate to handle duplicates
-await Vote.findOrCreate({
-    where: {
-      user_id: req.user.userId,
-      voteable_id: reply.id,
-      voteable_type: 'reply'
-    },
-    defaults: {
-      vote_type: 'like'
-    },
-    transaction
-  });
+        // Create the initial upvote for the creator using upsert with explicit error handling
+        try {
+            await Vote.upsert({
+                user_id: req.user.userId,
+                voteable_id: reply.id,
+                voteable_type: 'reply',
+                vote_type: 'like'
+            }, { 
+                transaction,
+                conflictFields: ['user_id', 'voteable_id', 'voteable_type']
+            });
+        } catch (error) {
+            // If it's a unique constraint error, we can just continue
+            if (error.name === 'SequelizeUniqueConstraintError') {
+                console.log('Ignoring duplicate vote - continuing with transaction');
+            } else {
+                // For other errors, we should still abort
+                throw error;
+            }
+        }
 
         // Add reputation for the automatic upvote
         await User.increment('reputation', {
