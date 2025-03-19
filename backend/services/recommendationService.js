@@ -249,7 +249,7 @@ const recommendationService = {
                 return {
                     cigars: [],
                     hasMore: false,
-                    message: "Please begin adding cigars to your humidor build up your recommendation profile"
+                    message: "Please begin adding cigars to your humidor to build up your recommendation profile"
                 };
             }
 
