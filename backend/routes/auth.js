@@ -438,8 +438,6 @@ router.post('/login',
 
 // Logout Route
 router.post('/logout', (req, res) => {
-  // No need for special configuration now that our middleware handles both
-  // res.cookie and res.clearCookie consistently
   res.clearCookie('token');
   res.status(200).json({ message: 'Logged out successfully' });
 });
