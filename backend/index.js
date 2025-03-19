@@ -177,30 +177,50 @@ app.use(cookieParser());
 
 // Add middleware to set proper cookie domain in production
 app.use((req, res, next) => {
-  // Store the original cookie function
-  const originalCookie = res.cookie;
-  
-  // Override the cookie function
-  res.cookie = function(name, value, options = {}) {
-    const isProduction = process.env.NODE_ENV === 'production';
+    // Store the original cookie and clearCookie functions
+    const originalCookie = res.cookie;
+    const originalClearCookie = res.clearCookie;
     
-    if (isProduction) {
-      // Get the host from headers
-      const host = req.get('x-forwarded-host') || req.get('host') || '';
+    // Override the cookie function
+    res.cookie = function(name, value, options = {}) {
+      const isProduction = process.env.NODE_ENV === 'production';
       
-      // Set domain for cigarpalate.com and its subdomains
-      if (host.includes('cigarpalate.com')) {
-        options.domain = '.cigarpalate.com';
-        console.log(`Setting cookie domain to ${options.domain} for ${name}`);
+      if (isProduction) {
+        // Get the host from headers
+        const host = req.get('x-forwarded-host') || req.get('host') || '';
+        
+        // Set domain for cigarpalate.com and its subdomains
+        if (host.includes('cigarpalate.com')) {
+          options.domain = '.cigarpalate.com';
+          console.log(`Setting cookie domain to ${options.domain} for ${name}`);
+        }
       }
-    }
+      
+      // Call the original cookie function with updated options
+      return originalCookie.call(this, name, value, options);
+    };
     
-    // Call the original cookie function with updated options
-    return originalCookie.call(this, name, value, options);
-  };
-  
-  next();
-});
+    // Also override the clearCookie function to use the same domain
+    res.clearCookie = function(name, options = {}) {
+      const isProduction = process.env.NODE_ENV === 'production';
+      
+      if (isProduction) {
+        // Get the host from headers
+        const host = req.get('x-forwarded-host') || req.get('host') || '';
+        
+        // Set the same domain for cigarpalate.com when clearing cookies
+        if (host.includes('cigarpalate.com')) {
+          options.domain = '.cigarpalate.com';
+          console.log(`Setting cookie domain to ${options.domain} for clearing ${name}`);
+        }
+      }
+      
+      // Call the original clearCookie function with updated options
+      return originalClearCookie.call(this, name, options);
+    };
+    
+    next();
+  });
 
 // Serve static files from the 'uploads' directory
 app.use('/uploads', express.static(uploadsDir, {
