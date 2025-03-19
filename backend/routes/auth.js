@@ -438,7 +438,19 @@ router.post('/login',
 
 // Logout Route
 router.post('/logout', (req, res) => {
-  res.clearCookie('token');
+  // Use the same cookie settings that were used when setting the cookie
+  // This is crucial for clearing cookies that were set with specific options
+  const isProduction = process.env.NODE_ENV === 'production';
+  const secureFlag = isProduction || req.secure || req.headers['x-forwarded-proto'] === 'https';
+  
+  res.clearCookie('token', {
+    httpOnly: true,
+    secure: secureFlag,
+    sameSite: 'Lax',
+    // Note: We don't need to specify maxAge when clearing a cookie
+    domain: undefined // Match the domain setting used in login
+  });
+  
   res.status(200).json({ message: 'Logged out successfully' });
 });
 
